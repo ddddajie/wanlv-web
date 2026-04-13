@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
-import { fetchChat, fetchDigitalHuman, sendWebRTCOffer } from '../api/chat';
+import { fetchChat, fetchDigitalHuman, sendWebRTCOffer } from '../../api/chat';
 
 const STUN_SERVER = 'stun:stun.l.google.com:19302';
 

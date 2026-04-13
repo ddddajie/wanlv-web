@@ -10,7 +10,7 @@ const userStore = useUserStore(pinia)
 const userSummary = computed(() => [
   {
     label: '当前身份',
-    value: userStore.userType === 'admin' ? '管理员' : '普通用户',
+    value: userStore.userType === '超级管理员' ? '管理员' : '普通用户',
   },
   {
     label: '当前角色',
@@ -87,12 +87,8 @@ const capabilityList = computed(() => {
         </p>
       </div>
 
-      <el-alert
-        :title="userStore.isSuperAdmin ? '你当前是超级管理员，可直接新增管理员。' : '新增管理员入口只会对超级管理员显示。'"
-        :type="userStore.isSuperAdmin ? 'success' : 'warning'"
-        show-icon
-        :closable="false"
-      />
+      <el-alert :title="userStore.isSuperAdmin ? '你当前是超级管理员，可直接新增管理员。' : '新增管理员入口只会对超级管理员显示。'"
+        :type="userStore.isSuperAdmin ? 'success' : 'warning'" show-icon :closable="false" />
     </section>
 
     <section class="dashboard__grid">
@@ -121,13 +117,8 @@ const capabilityList = computed(() => {
         </template>
 
         <div class="action-list">
-          <button
-            v-for="item in quickActions"
-            :key="item.title"
-            type="button"
-            class="action-card"
-            @click="item.handler"
-          >
+          <button v-for="item in quickActions" :key="item.title" type="button" class="action-card"
+            @click="item.handler">
             <span class="action-card__title">{{ item.title }}</span>
             <span class="action-card__desc">{{ item.description }}</span>
             <span class="action-card__link">{{ item.actionText }}</span>
@@ -325,6 +316,7 @@ code {
 }
 
 @media (max-width: 1024px) {
+
   .dashboard__hero,
   .dashboard__grid {
     grid-template-columns: 1fr;

@@ -8,48 +8,37 @@ const routes = [
     path: '/normal/login',
     name: 'NormalLogin',
     component: () => import('@/views/auth/NormalLogin.vue'),
-    meta: {
-      title: '普通用户登录',
-      public: true,
-    },
+    meta: { title: '普通用户登录', public: true },
   },
   {
     path: '/normal/register',
     name: 'NormalRegister',
     component: () => import('@/views/auth/NormalRegister.vue'),
-    meta: {
-      title: '普通用户注册',
-      public: true,
-    },
+    meta: { title: '普通用户注册', public: true },
   },
   {
     path: '/admin/login',
     name: 'AdminLogin',
     component: () => import('@/views/auth/AdminLogin.vue'),
-    meta: {
-      title: '管理员登录',
-      public: true,
-    },
+    meta: { title: '管理员登录', public: true },
   },
   {
     path: '/',
     component: AdminLayout,
-    meta: {
-      requiresAuth: true,
-    },
+    meta: { requiresAuth: true },
     children: [
-      {
-        path: '',
-        redirect: '/dashboard',
-      },
+      { path: '', redirect: '/dashboard' },
       {
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/home/Dashboard.vue'),
-        meta: {
-          title: '控制台',
-          requiresAuth: true,
-        },
+        meta: { title: '控制台', requiresAuth: true },
+      },
+      {
+        path: 'chat',
+        name: 'Chat',
+        component: () => import('@/views/chat/Chat.vue'),
+        meta: { title: '智能问答', requiresAuth: true },
       },
       {
         path: 'admin/create',
@@ -95,9 +84,7 @@ router.beforeEach((to, from, next) => {
   if (requiresAuth && !userStore.isLoggedIn) {
     next({
       path: loginType === 'admin' ? '/admin/login' : '/normal/login',
-      query: {
-        redirect: to.fullPath,
-      },
+      query: { redirect: to.fullPath },
     })
     return
   }

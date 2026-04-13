@@ -6,7 +6,7 @@ const baseURL = import.meta.env.DEV ? '/api' : targetBaseUrl
 
 const instance = axios.create({
   baseURL,
-  timeout: 10000,
+  timeout: 600000,
   headers: {
     'Content-Type': 'application/json',
   },
