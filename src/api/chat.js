@@ -7,6 +7,9 @@ export const agentChatApi = (data) => request.post('/agent/chat', data)
 
 export const analyzeSessionApi = (data) => request.post('/agent/session-analysis', data)
 
+export const analyzeDailySessionsApi = (data) =>
+  request.post('/agent/session-analysis/daily', data)
+
 export const bindSessionScenicAreaApi = (data) =>
   request.post('/agent/session/scenic-area/bind', data)
 

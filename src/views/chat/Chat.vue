@@ -1,11 +1,10 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { pinia, useUserStore } from '@/stores'
 import {
   agentChatApi,
-  analyzeSessionApi,
   bindSessionScenicAreaApi,
   fetchDigitalHuman,
   fetchInterruptTalk,
@@ -13,6 +12,7 @@ import {
 } from '@/api/chat'
 
 const route = useRoute()
+const router = useRouter()
 const userStore = useUserStore(pinia)
 
 const STUN_SERVER = 'stun:stun.l.google.com:19302'
@@ -22,14 +22,12 @@ const FINISHED_HIDE_DELAY = 900
 
 const userInput = ref('')
 const loading = ref(false)
-const summaryLoading = ref(false)
 const bindLoading = ref(false)
 const connectionStatus = ref('disconnected')
 const digitalHumanSessionId = ref(0)
 const isVoiceRecording = ref(false)
 const lastQuestion = ref('')
 const messages = ref([])
-const analysisResult = ref(null)
 const chatArea = ref(null)
 const pc = ref(null)
 const mediaRecorder = ref(null)
@@ -74,12 +72,7 @@ const scenicAreaLabel = computed(() => chatState.detectedScenicAreaName || route
 const scenicConfidenceText = computed(() => typeof chatState.detectionConfidence === 'number' ? `${Math.round(chatState.detectionConfidence * 100)}%` : '--')
 const hasScenicPrompt = computed(() => Boolean(chatState.needScenicAreaConfirm || chatState.detectedScenicAreaName))
 const canBindDetectedScenic = computed(() => Boolean(chatState.detectedScenicAreaId && currentUserId.value))
-const analysisSections = computed(() => analysisResult.value ? [
-  { label: '关注主题', value: analysisResult.value.focusTopics || [] },
-  { label: '兴趣标签', value: analysisResult.value.interestTags || [] },
-  { label: '服务建议', value: analysisResult.value.serviceSuggestions || [] },
-  { label: '知识缺口', value: analysisResult.value.knowledgeGapPoints || [] },
-] : [])
+const canAccessSummaryDashboard = computed(() => userStore.isSuperAdmin)
 
 const scrollToChatBottom = async () => {
   await nextTick()
@@ -268,7 +261,6 @@ const sendChatMessage = async ({ presetText = '', messageType = 'text' } = {}) =
   addMessage(messageType === 'voice' ? 'voice' : 'user', message)
   lastQuestion.value = message
   userInput.value = ''
-  analysisResult.value = null
   loading.value = true
   try {
     const result = await agentChatApi({
@@ -293,17 +285,13 @@ const sendChatMessage = async ({ presetText = '', messageType = 'text' } = {}) =
   }
 }
 
-const handleGenerateSummary = async () => {
-  if (summaryLoading.value) return
-  if (!currentUserId.value) return ElMessage.error('当前登录用户不存在，无法生成总结。')
-  summaryLoading.value = true
-  try {
-    analysisResult.value = await analyzeSessionApi({ userId: currentUserId.value, reportDate: chatState.reportDate || null })
-  } catch (error) {
-    console.error('Failed to analyze session:', error)
-  } finally {
-    summaryLoading.value = false
+const handleGenerateSummary = () => {
+  if (!canAccessSummaryDashboard.value) {
+    ElMessage.warning('聊天日报仅超级管理员可用，请联系超级管理员在控制台执行')
+    return
   }
+
+  router.push('/dashboard')
 }
 
 const handleConfirmScenicArea = async () => {
@@ -418,7 +406,7 @@ onUnmounted(() => {
       <div>
         <span class="kicker">Wanlv AI Guide</span>
         <h1>数字人智能问答</h1>
-        <p>聊天直连后端 `/agent/chat`，景区确认和今日总结分别对接 `/agent/session/scenic-area/bind` 与 `/agent/session-analysis`。</p>
+        <p>聊天直连后端 `/agent/chat`，景区确认对接 `/agent/session/scenic-area/bind`，聊天日报已迁移到超级管理员控制台统一执行。</p>
       </div>
       <div class="chips">
         <el-tag :type="statusType" effect="dark" round>{{ statusText }}</el-tag>
@@ -456,7 +444,9 @@ onUnmounted(() => {
           </button>
           <el-button v-if="connectionStatus !== 'connected'" plain type="success" :loading="connectionStatus === 'connecting'" @click="connectionStatus = 'connecting'; start()">{{ connectionStatus === 'connecting' ? '连接中...' : '连接数字人' }}</el-button>
           <el-button v-else plain type="danger" @click="stop()">断开连接</el-button>
-          <el-button plain type="primary" :loading="summaryLoading" @click="handleGenerateSummary()">生成今日总结</el-button>
+          <el-button plain type="primary" @click="handleGenerateSummary()">
+            {{ canAccessSummaryDashboard ? '前往日报控制台' : '日报权限说明' }}
+          </el-button>
         </div>
       </div>
 
@@ -500,22 +490,29 @@ onUnmounted(() => {
 
         <div class="panel">
           <div class="panel-head"><h2>今日总结</h2></div>
-          <div v-if="summaryLoading" class="summary">正在生成今日总结...</div>
-          <template v-else-if="analysisResult">
+          <template v-if="canAccessSummaryDashboard">
             <div class="summary-box">
-              <div><span>情感倾向</span><strong>{{ analysisResult.overallSentiment || '--' }}</strong></div>
-              <div><span>情感分值</span><strong>{{ analysisResult.sentimentScore ?? '--' }}</strong></div>
+              <div><span>入口位置</span><strong>/dashboard</strong></div>
+              <div><span>权限要求</span><strong>super_admin</strong></div>
             </div>
-            <div class="summary-block"><span>会话总结</span><p>{{ analysisResult.summary || '暂无总结' }}</p></div>
-            <div v-for="section in analysisSections" :key="section.label" class="summary-block">
-              <span>{{ section.label }}</span>
+            <div class="summary-block">
+              <span>为什么改到控制台</span>
+              <p>新的日报接口要求显式提交 operatorUsername 和 operatorPassword，因此改为在管理员控制台统一发起，支持单用户日报和按日期批量日报两种模式。</p>
+            </div>
+            <div class="summary-block">
+              <span>建议流程</span>
               <div class="tags">
-                <em v-for="item in section.value" :key="item">{{ item }}</em>
-                <em v-if="!section.value.length">暂无数据</em>
+                <em>先完成聊天联调</em>
+                <em>再进入控制台生成日报</em>
+                <em>需要时开启 forceReanalyze</em>
               </div>
             </div>
           </template>
-          <el-empty v-else description="结束一轮聊天后可以在这里查看今日会话分析结果。" :image-size="100" />
+          <el-empty
+            v-else
+            description="聊天日报仅超级管理员可用，普通账号请继续在本页联调聊天；需要日报时请联系超级管理员前往控制台处理。"
+            :image-size="100"
+          />
         </div>
       </div>
     </section>
