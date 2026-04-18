@@ -43,7 +43,7 @@ const routes = [
       {
         path: 'admin/create',
         name: 'AdminCreate',
-        component: () => import('@/views/admin/AdminCreate.vue'),
+        component: () => import('@/views/user/AdminCreate.vue'),
         meta: {
           title: '新增管理员',
           requiresAuth: true,

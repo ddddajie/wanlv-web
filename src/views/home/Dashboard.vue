@@ -1,72 +1,30 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { analyzeDailySessionsApi, analyzeSessionApi } from '@/api/chat'
+import { ElMessageBox } from 'element-plus'
 import { pinia, useUserStore } from '@/stores'
 import { targetBaseUrl } from '@/utils/request'
+import AdminCreate from '@/views/user/AdminCreate.vue'
+import AdminUserDetail from '@/views/user/AdminUserDetail.vue'
+import AdminUserList from '@/views/user/AdminUserList.vue'
+import Chat from '@/views/chat/Chat.vue'
+import DashboardOverview from '@/views/overview/DashboardOverview.vue'
+import DailyReport from '@/views/report/DailyReport.vue'
+import NormalUserDetail from '@/views/user/NormalUserDetail.vue'
+import NormalUserList from '@/views/user/NormalUserList.vue'
+import UserProfileEdit from '@/views/user/UserProfileEdit.vue'
+
+const DEFAULT_AVATAR = '/default-avatar.svg'
 
 const router = useRouter()
 const userStore = useUserStore(pinia)
 
-const credentialFormRef = ref()
-const singleFormRef = ref()
-const batchFormRef = ref()
-const singleLoading = ref(false)
-const batchLoading = ref(false)
-const singleResult = ref(null)
-const batchResult = ref(null)
-
-const formatDate = (date = new Date()) => {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-const credentialForm = reactive({
-  operatorUsername: userStore.isSuperAdmin ? userStore.username || '' : '',
-  operatorPassword: '',
-})
-
-const singleForm = reactive({
-  userId: '',
-  reportDate: formatDate(),
-  forceReanalyze: false,
-})
-
-const batchForm = reactive({
-  reportDate: formatDate(),
-  forceReanalyze: false,
-})
-
-const credentialRules = {
-  operatorUsername: [{ required: true, message: '请输入超级管理员账号', trigger: 'blur' }],
-  operatorPassword: [{ required: true, message: '请输入超级管理员密码', trigger: 'blur' }],
-}
-
-const validatePositiveUserId = (rule, value, callback) => {
-  if (value === '' || value === null || value === undefined) {
-    callback(new Error('请输入要生成日报的用户 ID'))
-    return
-  }
-
-  const userId = Number(value)
-  if (!Number.isInteger(userId) || userId <= 0) {
-    callback(new Error('用户 ID 必须是正整数'))
-    return
-  }
-
-  callback()
-}
-
-const singleRules = {
-  userId: [{ validator: validatePositiveUserId, trigger: 'blur' }],
-}
+const activeMenu = ref('overview')
+const avatarLoadFailed = ref(false)
 
 const canUseAnalysis = computed(() => userStore.isSuperAdmin)
+const canUseUserManagement = computed(() => userStore.isAdmin)
 const isAdminUser = computed(() => userStore.isAdmin)
-const isOperatorLocked = computed(() => canUseAnalysis.value && Boolean(userStore.username))
 
 const roleLabel = computed(() => {
   if (userStore.isSuperAdmin) return '超级管理员'
@@ -74,45 +32,50 @@ const roleLabel = computed(() => {
   return '普通用户'
 })
 
+const avatarUrl = computed(() => {
+  if (avatarLoadFailed.value) return DEFAULT_AVATAR
+  return userStore.userInfo?.avatarUrl || DEFAULT_AVATAR
+})
+
 const heroTitle = computed(() => {
-  if (userStore.isSuperAdmin) return '管理员日报中心'
-  if (userStore.isAdmin) return '管理员工作台'
-  return '用户控制台'
+  if (userStore.isSuperAdmin) return '统一工作台'
+  if (userStore.isAdmin) return '管理工作台'
+  return '用户工作台'
 })
 
 const heroDescription = computed(() => {
   if (userStore.isSuperAdmin) {
-    return '这里集中承接新的聊天日报接口：支持按用户生成日报、按日期批量生成日报，并展示后端返回的分析结果和批量执行明细。'
+    return '这里集成了概览、个人信息、聊天、日报、新增管理员和用户管理能力，便于你在一个控制台中完成主要业务操作。'
   }
 
   if (userStore.isAdmin) {
-    return '当前账号已进入管理员工作台，但聊天日报接口仅开放给 super_admin。你可以查看权限说明，真正执行日报任务需要超级管理员账号和密码。'
+    return '当前账号可以在同一工作台中切换聊天、个人信息和用户管理模块，查询管理员与普通用户数据。'
   }
 
-  return '当前控制台已按角色切分能力。聊天日报属于管理员专属功能，普通用户仍然可以继续使用聊天联调能力。'
+  return '普通用户可以在这里维护个人资料、查看概览信息，并继续使用聊天功能。'
 })
 
 const heroAlert = computed(() => {
   if (userStore.isSuperAdmin) {
     return {
-      title: '你当前拥有聊天日报生成权限',
+      title: '当前账号拥有完整后台权限',
       type: 'success',
-      description: '提交时必须显式携带超级管理员账号和密码，前端不会缓存 operatorPassword。',
+      description: '你可以直接使用聊天、日报管理、新增管理员和用户管理等全部能力。',
     }
   }
 
   if (userStore.isAdmin) {
     return {
-      title: '当前账号没有日报执行权限',
+      title: '当前账号为管理员模式',
       type: 'warning',
-      description: '后端接口要求 sys_admin_user.role = super_admin，普通管理员即使访问页面也不能调用。',
+      description: '你可以维护个人信息并查询用户数据，超管专属能力会自动按权限隐藏。',
     }
   }
 
   return {
-    title: '管理员日报能力已从普通用户入口收口',
+    title: '当前账号为普通用户模式',
     type: 'info',
-    description: '如果需要生成聊天日报，请由超级管理员登录后在这里统一操作。',
+    description: '当前工作台已保留概览、个人信息和聊天功能，管理能力不会对普通用户开放。',
   }
 })
 
@@ -126,19 +89,43 @@ const userSummary = computed(() => [
 const actionCards = computed(() => {
   const cards = [
     {
+      title: '维护个人信息',
+      description: '在工作台内直接修改头像、昵称、联系方式等资料。',
+      actionText: '打开修改信息',
+      actionKey: 'profile-edit',
+    },
+    {
       title: '进入智能问答',
-      description: '继续联调 /agent/chat 和景区绑定能力。',
-      actionText: '前往聊天页',
-      handler: () => router.push('/chat'),
+      description: '在工作台内直接打开聊天页面。',
+      actionText: '打开聊天',
+      actionKey: 'chat-page',
     },
   ]
+
+  if (canUseUserManagement.value) {
+    cards.push({
+      title: '查看用户管理',
+      description: '支持管理员详情、普通用户详情和两类分页列表查询。',
+      actionText: '打开用户管理',
+      actionKey: 'user-admin-list',
+    })
+  }
+
+  if (canUseAnalysis.value) {
+    cards.push({
+      title: '打开日报管理',
+      description: '在同一页面里完成日报生成和结果查看。',
+      actionText: '打开日报管理',
+      actionKey: 'daily-report',
+    })
+  }
 
   if (userStore.isSuperAdmin) {
     cards.push({
       title: '新增管理员',
-      description: '超级管理员可以继续维护后台管理员账号。',
-      actionText: '打开创建页',
-      handler: () => router.push('/admin/create'),
+      description: '在工作台内直接打开管理员创建页面。',
+      actionText: '打开新增管理员',
+      actionKey: 'admin-create-page',
     })
   }
 
@@ -148,795 +135,499 @@ const actionCards = computed(() => {
 const capabilityList = computed(() => {
   if (userStore.isSuperAdmin) {
     return [
-      '支持调用 POST /agent/session-analysis 生成单个用户的聊天日报。',
-      '支持调用 POST /agent/session-analysis/daily 生成指定日期的批量日报。',
-      'forceReanalyze 打开后，即使已有日报结果也会重新生成并覆盖。',
-      '批量接口会返回 success、skipped、failed 明细，便于排查当天执行情况。',
+      '左侧菜单支持切换概览、修改信息、聊天、日报、新增管理员和用户管理。',
+      '用户管理下提供管理员详情、普通用户详情、管理员分页和普通用户分页查询。',
+      '左上角用户区域可以直接进入修改信息，不需要跳转新页面。',
     ]
   }
 
   if (userStore.isAdmin) {
     return [
-      '可以进入管理员工作台查看当前账号状态和权限边界。',
-      '不能调用聊天日报接口，因为后端只允许 super_admin 使用。',
-      '如需执行日报，请联系超级管理员在当前控制台统一操作。',
+      '可以维护当前账号资料，并实时同步头像和昵称。',
+      '可以查询管理员与普通用户详情，并查看分页列表。',
+      '超管专属能力会根据权限自动隐藏。',
     ]
   }
 
   return [
-    '普通用户可以继续使用智能问答页进行会话联调。',
-    '聊天日报不再从普通用户入口直接触发，避免与新的权限模型冲突。',
-    '当前控制台保留账号概览和角色说明，便于区分可用能力。',
+    '可以修改当前账号资料。',
+    '可以继续使用聊天功能。',
+    '用户管理和超管能力不会对普通用户开放。',
   ]
 })
 
-const singleSections = computed(() => {
-  if (!singleResult.value) return []
+const apiNotes = computed(() => [
+  `当前服务地址：${targetBaseUrl}`,
+  '聊天接口：/agent/chat',
+  '用户管理接口前缀：/user',
+])
 
-  return [
-    { label: '关注话题', value: toArray(singleResult.value.focusTopics) },
-    { label: '兴趣标签', value: toArray(singleResult.value.interestTags) },
-    { label: '服务建议', value: toArray(singleResult.value.serviceSuggestions) },
-    { label: '知识缺口', value: toArray(singleResult.value.knowledgeGapPoints) },
+const menuItems = computed(() => {
+  const items = [
+    { key: 'overview', label: '概览' },
+    { key: 'chat-page', label: '智能问答' },
   ]
+
+  if (canUseAnalysis.value) {
+    items.push({ key: 'daily-report', label: '日报管理' })
+    items.push({ key: 'admin-create-page', label: '新增管理员' })
+  }
+
+  if (canUseUserManagement.value) {
+    items.push({
+      key: 'user-management',
+      label: '用户管理',
+      children: [
+        { key: 'user-admin-detail', label: '管理员详情查询' },
+        { key: 'user-normal-detail', label: '普通用户详情查询' },
+        { key: 'user-admin-list', label: '管理员分页列表' },
+        { key: 'user-normal-list', label: '普通用户分页列表' },
+      ],
+    })
+  } else {
+    items.push({ key: 'permission', label: '权限说明' })
+  }
+
+  return items
 })
 
-const batchMetrics = computed(() => {
-  if (!batchResult.value) return []
+const extraViewItems = [{ key: 'profile-edit', label: '修改信息' }]
 
-  return [
-    { label: '命中会话', value: batchResult.value.totalCount ?? 0, tone: 'neutral' },
-    { label: '生成成功', value: batchResult.value.successCount ?? 0, tone: 'success' },
-    { label: '已跳过', value: batchResult.value.skippedCount ?? 0, tone: 'warning' },
-    { label: '生成失败', value: batchResult.value.failedCount ?? 0, tone: 'danger' },
-  ]
+const flatMenuItems = computed(() =>
+  [...menuItems.value, ...extraViewItems].flatMap((item) => (item.children?.length ? item.children : [item])),
+)
+
+const currentMenuLabel = computed(() => {
+  return flatMenuItems.value.find((item) => item.key === activeMenu.value)?.label || '概览'
 })
 
-const batchItems = computed(() => toArray(batchResult.value?.items))
+watch(
+  menuItems,
+  (items) => {
+    const availableKeys = [...items, ...extraViewItems].flatMap((item) =>
+      item.children?.length ? item.children : [item],
+    )
+    if (!availableKeys.some((item) => item.key === activeMenu.value)) {
+      activeMenu.value = availableKeys[0]?.key || 'overview'
+    }
+  },
+  { immediate: true },
+)
 
-const singleSentimentTagType = computed(() => {
-  const sentiment = `${singleResult.value?.overallSentiment || ''}`.toLowerCase()
+watch(
+  () => userStore.userInfo?.avatarUrl,
+  () => {
+    avatarLoadFailed.value = false
+  },
+)
 
-  if (sentiment === 'positive') return 'success'
-  if (sentiment === 'negative') return 'danger'
-  if (sentiment) return 'warning'
-  return 'info'
-})
-
-function toArray(value) {
-  if (Array.isArray(value)) return value
-  if (!value) return []
-  return [value]
+function handleMenuSelect(key) {
+  activeMenu.value = key
 }
 
-function getBatchItemStatus(item) {
-  if (item?.skipped) return { label: '已跳过', type: 'warning' }
-  if (item?.success) return { label: '成功', type: 'success' }
-  return { label: '失败', type: 'danger' }
-}
-
-function ensureSuperAdmin() {
-  if (canUseAnalysis.value) return true
-
-  ElMessage.error('只有超级管理员才能使用聊天日报接口')
-  return false
-}
-
-function buildOperatorPayload(extraPayload = {}) {
-  return {
-    operatorUsername: credentialForm.operatorUsername.trim(),
-    operatorPassword: credentialForm.operatorPassword,
-    ...extraPayload,
+function handleActionNavigate(actionKey) {
+  if (flatMenuItems.value.some((item) => item.key === actionKey)) {
+    activeMenu.value = actionKey
   }
 }
 
-async function validateBeforeSubmit(extraFormRef) {
-  await credentialFormRef.value?.validate()
-  await extraFormRef?.value?.validate()
+function handleAvatarError() {
+  avatarLoadFailed.value = true
 }
 
-async function handleSingleAnalyze() {
-  if (!ensureSuperAdmin()) return
-
-  await validateBeforeSubmit(singleFormRef)
-  singleLoading.value = true
-
-  try {
-    singleResult.value = await analyzeSessionApi(
-      buildOperatorPayload({
-        userId: Number(singleForm.userId),
-        reportDate: singleForm.reportDate || undefined,
-        forceReanalyze: singleForm.forceReanalyze,
-      }),
-    )
-
-    ElMessage.success('单用户聊天日报生成成功')
-  } finally {
-    singleLoading.value = false
-  }
+function handleProfileEdit() {
+  activeMenu.value = 'profile-edit'
 }
 
-async function handleBatchAnalyze() {
-  if (!ensureSuperAdmin()) return
-
-  await validateBeforeSubmit(batchFormRef)
-  batchLoading.value = true
-
+async function handleLogout() {
   try {
-    batchResult.value = await analyzeDailySessionsApi(
-      buildOperatorPayload({
-        reportDate: batchForm.reportDate || undefined,
-        forceReanalyze: batchForm.forceReanalyze,
-      }),
-    )
+    await ElMessageBox.confirm('退出后需要重新登录，是否继续？', '退出登录', {
+      type: 'warning',
+      confirmButtonText: '退出',
+      cancelButtonText: '取消',
+    })
 
-    ElMessage.success('按日期批量日报任务已执行完成')
-  } finally {
-    batchLoading.value = false
+    userStore.clearLogin()
+    router.replace('/normal/login')
+  } catch {
+    return
   }
 }
 </script>
 
 <template>
-  <div class="dashboard">
-    <section class="dashboard__hero glass-card">
-      <div>
-        <p class="dashboard__eyebrow">Connected to {{ targetBaseUrl }}</p>
-        <h1 class="dashboard__title">
-          {{ userStore.displayName || userStore.username || '欢迎使用万旅后台' }}，{{ heroTitle }}
-        </h1>
-        <p class="dashboard__desc">{{ heroDescription }}</p>
-      </div>
+  <div class="dashboard-workspace">
+    <section class="dashboard-workspace__frame glass-card">
+      <aside class="dashboard-sidebar">
+        <div class="dashboard-user">
+          <div class="dashboard-user__top">
+            <div class="dashboard-user__avatar">
+              <img :src="avatarUrl" alt="用户头像" @error="handleAvatarError" />
+            </div>
 
-      <div class="dashboard__hero-side">
-        <el-alert
-          :title="heroAlert.title"
-          :description="heroAlert.description"
-          :type="heroAlert.type"
-          :closable="false"
-          show-icon
-        />
-        <div class="dashboard__hero-badges">
-          <el-tag effect="dark" type="primary">{{ roleLabel }}</el-tag>
-          <el-tag effect="plain" :type="canUseAnalysis ? 'success' : 'info'">
-            {{ canUseAnalysis ? '可执行日报' : '只读或普通能力' }}
-          </el-tag>
-        </div>
-      </div>
-    </section>
-
-    <section class="dashboard__grid">
-      <el-card shadow="never" class="dashboard-card">
-        <template #header>
-          <div class="dashboard-card__header">
-            <span>登录信息</span>
-            <el-tag effect="plain">{{ userStore.username || '-' }}</el-tag>
+            <div class="dashboard-user__meta">
+              <strong>{{ userStore.displayName || userStore.username || '未登录用户' }}</strong>
+              <span>{{ userStore.username || '-' }}</span>
+            </div>
           </div>
-        </template>
 
-        <div class="summary-grid">
-          <div v-for="item in userSummary" :key="item.label" class="summary-item">
-            <div class="summary-item__label">{{ item.label }}</div>
-            <div class="summary-item__value">{{ item.value }}</div>
+          <div class="dashboard-user__identity">
+            <span>身份信息</span>
+            <strong>{{ roleLabel }}</strong>
+          </div>
+
+          <div class="dashboard-user__actions">
+            <el-button class="dashboard-user__action" round @click="handleProfileEdit">
+              修改信息
+            </el-button>
+            <el-button class="dashboard-user__logout" round @click="handleLogout">
+              退出登录
+            </el-button>
           </div>
         </div>
-      </el-card>
 
-      <el-card shadow="never" class="dashboard-card">
-        <template #header>
-          <div class="dashboard-card__header">
-            <span>快捷入口</span>
-            <span class="dashboard-card__hint">按当前角色展示</span>
-          </div>
-        </template>
-
-        <div class="action-list">
-          <button
-            v-for="item in actionCards"
-            :key="item.title"
-            type="button"
-            class="action-card"
-            @click="item.handler"
-          >
-            <span class="action-card__title">{{ item.title }}</span>
-            <span class="action-card__desc">{{ item.description }}</span>
-            <span class="action-card__link">{{ item.actionText }}</span>
-          </button>
+        <div class="dashboard-sidebar__brand">
+          <p class="dashboard-sidebar__eyebrow">Wanlv Console</p>
+          <h1 class="dashboard-sidebar__title">Dashboard</h1>
         </div>
-      </el-card>
 
-      <el-card shadow="never" class="dashboard-card">
-        <template #header>
-          <div class="dashboard-card__header">
-            <span>当前可用能力</span>
+        <el-menu :default-active="activeMenu" class="dashboard-menu" @select="handleMenuSelect">
+          <template v-for="item in menuItems" :key="item.key">
+            <el-sub-menu v-if="item.children?.length" :index="item.key">
+              <template #title>
+                <span class="dashboard-menu__label">{{ item.label }}</span>
+              </template>
+
+              <el-menu-item
+                v-for="child in item.children"
+                :key="child.key"
+                :index="child.key"
+                class="dashboard-menu__item dashboard-menu__item--child"
+              >
+                <span class="dashboard-menu__label">{{ child.label }}</span>
+              </el-menu-item>
+            </el-sub-menu>
+
+            <el-menu-item v-else :index="item.key" class="dashboard-menu__item">
+              <span class="dashboard-menu__label">{{ item.label }}</span>
+            </el-menu-item>
+          </template>
+        </el-menu>
+      </aside>
+
+      <div class="dashboard-content">
+        <header class="dashboard-content__header">
+          <div>
+            <p class="dashboard-content__eyebrow">当前模块</p>
+            <h2 class="dashboard-content__title">{{ currentMenuLabel }}</h2>
           </div>
-        </template>
+        </header>
 
-        <ul class="capability-list">
-          <li v-for="item in capabilityList" :key="item">{{ item }}</li>
-        </ul>
-      </el-card>
+        <div class="dashboard-content__body">
+          <DashboardOverview
+            v-if="activeMenu === 'overview'"
+            :target-base-url="targetBaseUrl"
+            :username="userStore.username"
+            :display-name="userStore.displayName"
+            :role-label="roleLabel"
+            :hero-title="heroTitle"
+            :hero-description="heroDescription"
+            :hero-alert="heroAlert"
+            :can-use-analysis="canUseAnalysis"
+            :user-summary="userSummary"
+            :action-cards="actionCards"
+            :capability-list="capabilityList"
+            :api-notes="apiNotes"
+            @navigate="handleActionNavigate"
+          />
 
-      <el-card shadow="never" class="dashboard-card">
-        <template #header>
-          <div class="dashboard-card__header">
-            <span>接口规则提醒</span>
-          </div>
-        </template>
+          <UserProfileEdit v-else-if="activeMenu === 'profile-edit'" />
 
-        <div class="note-list">
-          <div>管理员日报接口前缀：<code>/agent</code></div>
-          <div>成功判断方式：<code>res.code === 200</code>，请求工具会直接返回 <code>data</code></div>
-          <div>两个日报接口都必须显式提交 <code>operatorUsername</code> 和 <code>operatorPassword</code></div>
-          <div>单用户接口额外要求 <code>userId</code>；批量接口按 <code>reportDate</code> 处理当天全部会话</div>
-        </div>
-      </el-card>
-    </section>
+          <Chat v-else-if="activeMenu === 'chat-page'" embedded @navigate="handleActionNavigate" />
 
-    <section v-if="isAdminUser" class="dashboard__admin-panel">
-      <el-card shadow="never" class="dashboard-card dashboard-card--full">
-        <template #header>
-          <div class="dashboard-card__header">
-            <span>超级管理员鉴权</span>
-            <el-tag :type="canUseAnalysis ? 'success' : 'warning'" effect="plain">
-              {{ canUseAnalysis ? '可提交' : '当前账号无权限' }}
-            </el-tag>
-          </div>
-        </template>
+          <DailyReport v-else-if="activeMenu === 'daily-report'" />
 
-        <el-form
-          ref="credentialFormRef"
-          :model="credentialForm"
-          :rules="credentialRules"
-          label-position="top"
-        >
-          <div class="form-grid">
-            <el-form-item label="操作人账号" prop="operatorUsername">
-              <el-input
-                v-model.trim="credentialForm.operatorUsername"
-                :disabled="isOperatorLocked"
-                placeholder="请输入超级管理员账号"
-                size="large"
-                clearable
-              />
-            </el-form-item>
+          <AdminCreate v-else-if="activeMenu === 'admin-create-page'" embedded @navigate="handleActionNavigate" />
 
-            <el-form-item label="操作人密码" prop="operatorPassword">
-              <el-input
-                v-model="credentialForm.operatorPassword"
-                placeholder="请输入当前超级管理员密码"
-                size="large"
-                show-password
-                clearable
-              />
-            </el-form-item>
-          </div>
-        </el-form>
-      </el-card>
+          <AdminUserDetail v-else-if="activeMenu === 'user-admin-detail'" />
 
-      <template v-if="canUseAnalysis">
-        <section class="dashboard__grid">
-          <el-card shadow="never" class="dashboard-card">
+          <NormalUserDetail v-else-if="activeMenu === 'user-normal-detail'" />
+
+          <AdminUserList v-else-if="activeMenu === 'user-admin-list'" />
+
+          <NormalUserList v-else-if="activeMenu === 'user-normal-list'" />
+
+          <el-card v-else shadow="never" class="permission-card">
             <template #header>
-              <div class="dashboard-card__header">
-                <span>单用户日报</span>
-                <span class="dashboard-card__hint">POST /agent/session-analysis</span>
-              </div>
-            </template>
-
-            <el-form
-              ref="singleFormRef"
-              :model="singleForm"
-              :rules="singleRules"
-              label-position="top"
-              @submit.prevent="handleSingleAnalyze"
-            >
-              <div class="form-grid">
-                <el-form-item label="用户 ID" prop="userId">
-                  <el-input
-                    v-model.trim="singleForm.userId"
-                    placeholder="例如 10001"
-                    size="large"
-                    clearable
-                  />
-                </el-form-item>
-
-                <el-form-item label="日报日期">
-                  <el-date-picker
-                    v-model="singleForm.reportDate"
-                    type="date"
-                    value-format="YYYY-MM-DD"
-                    format="YYYY-MM-DD"
-                    placeholder="选择日期"
-                    size="large"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-
-                <el-form-item label="强制重跑" class="form-grid__full">
-                  <div class="switch-row">
-                    <el-switch v-model="singleForm.forceReanalyze" />
-                    <span>即使已有日报结果，也重新调用 Agent 覆盖旧数据</span>
-                  </div>
-                </el-form-item>
-              </div>
-
-              <div class="form-actions">
-                <el-button type="primary" size="large" :loading="singleLoading" @click="handleSingleAnalyze">
-                  生成单用户日报
-                </el-button>
-              </div>
-            </el-form>
-          </el-card>
-
-          <el-card shadow="never" class="dashboard-card">
-            <template #header>
-              <div class="dashboard-card__header">
-                <span>按日期批量日报</span>
-                <span class="dashboard-card__hint">POST /agent/session-analysis/daily</span>
-              </div>
-            </template>
-
-            <el-form
-              ref="batchFormRef"
-              :model="batchForm"
-              label-position="top"
-              @submit.prevent="handleBatchAnalyze"
-            >
-              <div class="form-grid">
-                <el-form-item label="日报日期">
-                  <el-date-picker
-                    v-model="batchForm.reportDate"
-                    type="date"
-                    value-format="YYYY-MM-DD"
-                    format="YYYY-MM-DD"
-                    placeholder="选择日期"
-                    size="large"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-
-                <div class="batch-note">
-                  <strong>批量规则</strong>
-                  <span>后端会按 reportDate 查询 visitor_session，并返回 success、skipped、failed 明细。</span>
-                </div>
-
-                <el-form-item label="强制重跑" class="form-grid__full">
-                  <div class="switch-row">
-                    <el-switch v-model="batchForm.forceReanalyze" />
-                    <span>关闭时会跳过已经 ANALYZED 且已有 summary 的会话</span>
-                  </div>
-                </el-form-item>
-              </div>
-
-              <div class="form-actions">
-                <el-button type="primary" size="large" :loading="batchLoading" @click="handleBatchAnalyze">
-                  执行批量日报
-                </el-button>
-              </div>
-            </el-form>
-          </el-card>
-        </section>
-
-        <section class="dashboard__grid">
-          <el-card shadow="never" class="dashboard-card">
-            <template #header>
-              <div class="dashboard-card__header">
-                <span>单用户日报结果</span>
-                <el-tag v-if="singleResult" :type="singleSentimentTagType" effect="plain">
-                  {{ singleResult.overallSentiment || '未标注情绪' }}
-                </el-tag>
-              </div>
-            </template>
-
-            <template v-if="singleResult">
-              <div class="summary-box">
-                <div>
-                  <span>情绪倾向</span>
-                  <strong>{{ singleResult.overallSentiment || '--' }}</strong>
-                </div>
-                <div>
-                  <span>情绪分值</span>
-                  <strong>{{ singleResult.sentimentScore ?? '--' }}</strong>
-                </div>
-              </div>
-
-              <div class="summary-block">
-                <span>会话总结</span>
-                <p>{{ singleResult.summary || '暂无总结内容' }}</p>
-              </div>
-
-              <div v-for="section in singleSections" :key="section.label" class="summary-block">
-                <span>{{ section.label }}</span>
-                <div class="tag-list">
-                  <em v-for="item in section.value" :key="item">{{ item }}</em>
-                  <em v-if="!section.value.length">暂无数据</em>
-                </div>
+              <div class="permission-card__header">
+                <span>权限说明</span>
               </div>
             </template>
 
             <el-empty
-              v-else
-              description="提交单用户日报后，这里会展示 summary、sentiment 和四组标签结果。"
-              :image-size="92"
+              description="当前账号不是管理员，因此用户管理、日报管理和新增管理员等能力不会开放。你仍然可以继续使用概览、修改信息和聊天功能。"
+              :image-size="96"
             />
+
+            <div v-if="isAdminUser" class="permission-card__tips">
+              <el-alert
+                title="管理员账号已具备用户管理能力"
+                description="如果菜单没有显示，请重新登录或刷新当前页面同步权限状态。"
+                type="info"
+                :closable="false"
+                show-icon
+              />
+            </div>
           </el-card>
-
-          <el-card shadow="never" class="dashboard-card">
-            <template #header>
-              <div class="dashboard-card__header">
-                <span>批量执行结果</span>
-                <el-tag v-if="batchResult" effect="plain">{{ batchResult.reportDate }}</el-tag>
-              </div>
-            </template>
-
-            <template v-if="batchResult">
-              <div class="metric-grid">
-                <div
-                  v-for="item in batchMetrics"
-                  :key="item.label"
-                  class="metric-card"
-                  :class="`metric-card--${item.tone}`"
-                >
-                  <span>{{ item.label }}</span>
-                  <strong>{{ item.value }}</strong>
-                </div>
-              </div>
-
-              <el-table :data="batchItems" class="result-table" empty-text="当前日期没有返回执行明细">
-                <el-table-column label="状态" width="110">
-                  <template #default="{ row }">
-                    <el-tag :type="getBatchItemStatus(row).type" effect="plain">
-                      {{ getBatchItemStatus(row).label }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="sessionId" label="Session ID" min-width="110" />
-                <el-table-column prop="sessionCode" label="Session Code" min-width="190" show-overflow-tooltip />
-                <el-table-column prop="userId" label="用户 ID" min-width="110" />
-                <el-table-column prop="message" label="执行说明" min-width="220" show-overflow-tooltip />
-                <el-table-column prop="summary" label="摘要" min-width="280" show-overflow-tooltip />
-              </el-table>
-            </template>
-
-            <el-empty
-              v-else
-              description="执行按日期批量日报后，这里会展示 totalCount、successCount、skippedCount、failedCount 和明细列表。"
-              :image-size="92"
-            />
-          </el-card>
-        </section>
-      </template>
-
-      <el-card v-else shadow="never" class="dashboard-card dashboard-card--full">
-        <template #header>
-          <div class="dashboard-card__header">
-            <span>日报权限说明</span>
-          </div>
-        </template>
-
-        <el-empty
-          description="当前账号不是 super_admin，聊天日报接口不可调用。请切换为超级管理员后再提交 operatorUsername、operatorPassword、reportDate 等参数。"
-          :image-size="96"
-        />
-      </el-card>
+        </div>
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.dashboard {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+.dashboard-workspace {
+  height: calc(100vh - 48px);
+  overflow: hidden;
 }
 
-.dashboard__hero {
+.dashboard-workspace__frame {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 24px;
-  padding: 30px;
+  height: 100%;
+  padding: 24px;
+  overflow: hidden;
 }
 
-.dashboard__hero-side {
+.dashboard-sidebar {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
+  min-height: 0;
+  padding: 22px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 118, 110, 0.94));
+  color: #f8fafc;
+  overflow: hidden;
 }
 
-.dashboard__hero-badges {
+.dashboard-user {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.dashboard-user__top {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.dashboard-user__avatar {
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  flex: 0 0 56px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.dashboard-user__avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dashboard-user__meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dashboard-user__meta strong {
+  color: #ffffff;
+  font-size: 16px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.dashboard-user__meta span {
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.dashboard-user__identity {
+  display: grid;
+  gap: 4px;
+}
+
+.dashboard-user__identity span {
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 12px;
+}
+
+.dashboard-user__identity strong {
+  color: #ffffff;
+  font-size: 14px;
+}
+
+.dashboard-user__actions {
+  display: grid;
   gap: 10px;
 }
 
-.dashboard__eyebrow {
-  margin: 0 0 12px;
-  color: #0f766e;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.dashboard-user__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
-.dashboard__title {
-  margin: 0;
-  color: #0f172a;
-  font-size: clamp(28px, 4vw, 42px);
-  line-height: 1.1;
-}
-
-.dashboard__desc {
-  max-width: 760px;
-  margin: 16px 0 0;
-  color: #475569;
-  font-size: 15px;
-  line-height: 1.8;
-}
-
-.dashboard__grid,
-.dashboard__admin-panel {
-  display: grid;
-  gap: 20px;
-}
-
-.dashboard__grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.dashboard-card {
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.78);
-}
-
-.dashboard-card--full {
+.dashboard-user__action,
+.dashboard-user__logout {
   width: 100%;
 }
 
-.dashboard-card :deep(.el-card__header) {
-  padding-bottom: 0;
-  border-bottom: 0;
+.dashboard-sidebar__brand {
+  padding-bottom: 8px;
 }
 
-.dashboard-card__header {
+.dashboard-sidebar__eyebrow {
+  margin: 0 0 8px;
+  color: rgba(226, 232, 240, 0.84);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dashboard-sidebar__title {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+.dashboard-menu {
+  flex: 1;
+  min-height: 0;
+  border-right: 0;
+  background: transparent;
+  overflow: auto;
+}
+
+.dashboard-menu :deep(.el-menu-item),
+.dashboard-menu :deep(.el-sub-menu__title) {
+  min-height: 52px;
+  margin-bottom: 8px;
+  border-radius: 16px;
+  color: rgba(248, 250, 252, 0.88);
+}
+
+.dashboard-menu :deep(.el-menu-item:hover),
+.dashboard-menu :deep(.el-sub-menu__title:hover) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-menu :deep(.el-menu-item.is-active) {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.22), rgba(255, 255, 255, 0.16));
+  color: #ffffff;
+}
+
+.dashboard-menu :deep(.el-sub-menu .el-menu) {
+  background: transparent;
+}
+
+.dashboard-menu :deep(.el-sub-menu.is-opened > .el-sub-menu__title) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-menu__item--child {
+  margin-left: 8px;
+}
+
+.dashboard-menu__label {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.dashboard-content {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 20px;
+  overflow: hidden;
+}
+
+.dashboard-content__header {
+  flex: 0 0 auto;
+  padding: 8px 6px 0;
+}
+
+.dashboard-content__eyebrow {
+  margin: 0 0 8px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dashboard-content__title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 28px;
+}
+
+.dashboard-content__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 20px;
+  overflow: auto;
+  padding: 0 6px 6px;
+}
+
+.permission-card {
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.permission-card :deep(.el-card__header) {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.permission-card__header {
   color: #0f172a;
   font-size: 18px;
   font-weight: 700;
 }
 
-.dashboard-card__hint {
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 500;
+.permission-card__tips {
+  margin-top: 20px;
 }
 
-.summary-grid,
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.summary-item,
-.metric-card {
-  padding: 18px;
-  border-radius: 22px;
-  border: 1px solid #e2e8f0;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-}
-
-.summary-item__label,
-.metric-card span,
-.summary-block span {
-  color: #64748b;
-  font-size: 13px;
-}
-
-.summary-item__value,
-.metric-card strong,
-.summary-box strong {
-  display: block;
-  margin-top: 10px;
-  color: #0f172a;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1.35;
-  word-break: break-word;
-}
-
-.metric-card--success {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(255, 255, 255, 0.98));
-}
-
-.metric-card--warning {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(255, 255, 255, 0.98));
-}
-
-.metric-card--danger {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(255, 255, 255, 0.98));
-}
-
-.action-list {
-  display: grid;
-  gap: 14px;
-}
-
-.action-card {
-  width: 100%;
-  text-align: left;
-  border: 1px solid #d9e3f0;
-  border-radius: 22px;
-  padding: 18px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(240, 249, 255, 0.96));
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.action-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 18px 32px rgba(15, 23, 42, 0.08);
-}
-
-.action-card__title {
-  display: block;
-  color: #0f172a;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.action-card__desc {
-  display: block;
-  margin-top: 8px;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.action-card__link {
-  display: inline-flex;
-  margin-top: 14px;
-  color: #0f766e;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.capability-list {
-  margin: 0;
-  padding-left: 18px;
-  color: #334155;
-  line-height: 1.9;
-}
-
-.note-list {
-  display: grid;
-  gap: 12px;
-  color: #334155;
-  line-height: 1.8;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
-}
-
-.form-grid__full {
-  grid-column: 1 / -1;
-}
-
-.form-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.switch-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 40px;
-  color: #475569;
-  line-height: 1.7;
-}
-
-.batch-note {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-  min-height: 112px;
-  padding: 18px;
-  border-radius: 22px;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(15, 118, 110, 0.08));
-  color: #334155;
-}
-
-.batch-note strong {
-  color: #0f172a;
-  font-size: 15px;
-}
-
-.summary-box {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  padding: 16px;
-  border-radius: 22px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08));
-}
-
-.summary-box span {
-  display: block;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.summary-block {
-  margin-top: 16px;
-}
-
-.summary-block p {
-  margin: 10px 0 0;
-  color: #334155;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.tag-list em {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(37, 99, 235, 0.08);
-  color: #1d4ed8;
-  font-style: normal;
-}
-
-.result-table {
-  margin-top: 18px;
-}
-
-code {
-  padding: 2px 6px;
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.06);
-}
-
-@media (max-width: 1120px) {
-  .dashboard__hero,
-  .dashboard__grid,
-  .summary-grid,
-  .metric-grid,
-  .form-grid,
-  .summary-box {
+@media (max-width: 1180px) {
+  .dashboard-workspace__frame {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 768px) {
-  .dashboard__hero {
-    padding: 22px;
+  .dashboard-workspace {
+    height: calc(100vh - 32px);
   }
 
-  .switch-row {
-    align-items: flex-start;
-    flex-direction: column;
+  .dashboard-workspace__frame {
+    padding: 16px;
+  }
+
+  .dashboard-sidebar {
+    padding: 18px;
   }
 }
 </style>

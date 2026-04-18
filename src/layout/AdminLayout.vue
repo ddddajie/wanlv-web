@@ -8,6 +8,9 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore(pinia)
 
+const showShellHeader = computed(() => route.path !== '/dashboard')
+const isDashboardRoute = computed(() => route.path === '/dashboard')
+
 const navItems = computed(() => {
   const items = [
     { label: '控制台', path: '/dashboard' },
@@ -38,8 +41,8 @@ async function handleLogout() {
 </script>
 
 <template>
-  <div class="shell-layout">
-    <header class="shell-header">
+  <div class="shell-layout" :class="{ 'shell-layout--dashboard': isDashboardRoute }">
+    <header v-if="showShellHeader" class="shell-header">
       <div class="shell-header__brand">
         <div class="shell-header__logo">WL</div>
         <div>
@@ -76,12 +79,12 @@ async function handleLogout() {
       </div>
     </header>
 
-    <main class="shell-main">
+    <main class="shell-main" :class="{ 'shell-main--compact': !showShellHeader }">
       <router-view />
     </main>
   </div>
 </template>
 
 <style scoped>
-.shell-layout{min-height:100vh;padding:24px}.shell-header{display:grid;grid-template-columns:1.2fr auto auto;gap:20px;align-items:center;padding:20px 24px;border:1px solid rgba(255,255,255,.7);border-radius:28px;background:rgba(255,255,255,.78);backdrop-filter:blur(18px);box-shadow:0 22px 48px rgba(15,23,42,.08)}.shell-header__brand,.shell-header__user{display:flex;align-items:center;gap:14px}.shell-header__logo{width:52px;height:52px;border-radius:18px;display:grid;place-items:center;color:#fff;font-size:16px;font-weight:800;background:linear-gradient(135deg,#0f766e,#f59e0b)}.shell-header__title{color:#0f172a;font-size:22px;font-weight:800}.shell-header__subtitle{margin-top:4px;color:#475569;font-size:13px}.shell-header__nav{display:flex;gap:10px;flex-wrap:wrap}.shell-header__user{justify-content:flex-end}.shell-header__meta{display:flex;flex-direction:column;gap:8px}.shell-header__name{color:#0f172a;font-weight:700;text-align:right}.shell-header__tags{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}.shell-main{padding-top:24px}@media (max-width:1120px){.shell-header{grid-template-columns:1fr}.shell-header__user{justify-content:space-between}.shell-header__name,.shell-header__tags{text-align:left;justify-content:flex-start}}@media (max-width:768px){.shell-layout{padding:16px}.shell-header{padding:18px;border-radius:24px}.shell-header__user{flex-direction:column;align-items:stretch}.shell-header__meta{width:100%}}
+.shell-layout{min-height:100vh;padding:24px}.shell-layout--dashboard{height:100vh;overflow:hidden}.shell-header{display:grid;grid-template-columns:1.2fr auto auto;gap:20px;align-items:center;padding:20px 24px;border:1px solid rgba(255,255,255,.7);border-radius:28px;background:rgba(255,255,255,.78);backdrop-filter:blur(18px);box-shadow:0 22px 48px rgba(15,23,42,.08)}.shell-header__brand,.shell-header__user{display:flex;align-items:center;gap:14px}.shell-header__logo{width:52px;height:52px;border-radius:18px;display:grid;place-items:center;color:#fff;font-size:16px;font-weight:800;background:linear-gradient(135deg,#0f766e,#f59e0b)}.shell-header__title{color:#0f172a;font-size:22px;font-weight:800}.shell-header__subtitle{margin-top:4px;color:#475569;font-size:13px}.shell-header__nav{display:flex;gap:10px;flex-wrap:wrap}.shell-header__user{justify-content:flex-end}.shell-header__meta{display:flex;flex-direction:column;gap:8px}.shell-header__name{color:#0f172a;font-weight:700;text-align:right}.shell-header__tags{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}.shell-main{padding-top:24px}.shell-main--compact{padding-top:0}.shell-layout--dashboard .shell-main{flex:1;min-height:0}@media (max-width:1120px){.shell-header{grid-template-columns:1fr}.shell-header__user{justify-content:space-between}.shell-header__name,.shell-header__tags{text-align:left;justify-content:flex-start}}@media (max-width:768px){.shell-layout{padding:16px}.shell-header{padding:18px;border-radius:24px}.shell-header__user{flex-direction:column;align-items:stretch}.shell-header__meta{width:100%}}
 </style>

@@ -17,9 +17,30 @@ export const useUserStore = defineStore('wanlv-user', {
       state.userInfo?.userType === 'admin' && state.userInfo?.role === 'super_admin',
   },
   actions: {
+    normalizeUserInfo(userInfo) {
+      if (!userInfo) return null
+
+      return {
+        ...userInfo,
+        displayName:
+          userInfo.displayName ||
+          userInfo.realName ||
+          userInfo.nickname ||
+          userInfo.username ||
+          '',
+      }
+    },
     setLogin(userInfo) {
-      this.userInfo = userInfo || null
-      this.isLogin = Boolean(userInfo)
+      this.userInfo = this.normalizeUserInfo(userInfo)
+      this.isLogin = Boolean(this.userInfo)
+    },
+    patchUserInfo(partial) {
+      if (!this.userInfo) return
+
+      this.userInfo = this.normalizeUserInfo({
+        ...this.userInfo,
+        ...partial,
+      })
     },
     clearLogin() {
       this.userInfo = null
