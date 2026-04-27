@@ -51,33 +51,10 @@ onMounted(() => {
 
 <template>
   <div class="list-page">
-    <section class="list-page__hero glass-card">
-      <div>
-        <p class="list-page__eyebrow">Normal Page Query</p>
-        <h2 class="list-page__title">普通用户分页列表查询</h2>
-        <p class="list-page__desc">
-          调用 <code>/user/normal/page</code> 获取普通用户分页列表，适合在后台统一查看用户基础资料与活跃情况。
-        </p>
-      </div>
-
-      <div class="list-page__summary">
-        <div class="list-page__summary-item">
-          <span>记录总数</span>
-          <strong>{{ pageData.total }}</strong>
-        </div>
-        <div class="list-page__summary-item">
-          <span>当前页码</span>
-          <strong>{{ query.pageNum }}</strong>
-        </div>
-        <el-button type="primary" plain :loading="loading" @click="fetchList">刷新列表</el-button>
-      </div>
-    </section>
-
     <el-card shadow="never" class="list-page__card">
       <template #header>
         <div class="list-page__card-head">
           <span>普通用户列表</span>
-          <el-tag effect="plain" type="success">pageNum={{ query.pageNum }} / pageSize={{ query.pageSize }}</el-tag>
         </div>
       </template>
 
@@ -96,13 +73,8 @@ onMounted(() => {
         <el-table-column label="兴趣标签" min-width="220">
           <template #default="{ row }">
             <div class="list-page__tags">
-              <el-tag
-                v-for="tag in parseInterestTags(row.interestTags)"
-                :key="`${row.id}-${tag}`"
-                size="small"
-                effect="plain"
-                type="info"
-              >
+              <el-tag v-for="tag in parseInterestTags(row.interestTags)" :key="`${row.id}-${tag}`" size="small"
+                effect="plain" type="info">
                 {{ tag }}
               </el-tag>
               <span v-if="!parseInterestTags(row.interestTags).length">-</span>
@@ -129,16 +101,9 @@ onMounted(() => {
       </el-table>
 
       <div class="list-page__footer">
-        <el-pagination
-          background
-          layout="total, sizes, prev, pager, next"
-          :current-page="query.pageNum"
-          :page-size="query.pageSize"
-          :page-sizes="[10, 20, 50]"
-          :total="pageData.total"
-          @current-change="handleCurrentChange"
-          @size-change="handleSizeChange"
-        />
+        <el-pagination background layout="total, sizes, prev, pager, next" :current-page="query.pageNum"
+          :page-size="query.pageSize" :page-sizes="[10, 20, 50]" :total="pageData.total"
+          @current-change="handleCurrentChange" @size-change="handleSizeChange" />
       </div>
     </el-card>
   </div>

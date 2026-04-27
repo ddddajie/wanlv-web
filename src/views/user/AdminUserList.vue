@@ -45,33 +45,10 @@ onMounted(() => {
 
 <template>
   <div class="list-page">
-    <section class="list-page__hero glass-card">
-      <div>
-        <p class="list-page__eyebrow">Admin Page Query</p>
-        <h2 class="list-page__title">管理员分页列表查询</h2>
-        <p class="list-page__desc">
-          调用 <code>/user/admin/page</code> 获取管理员分页数据，默认按创建时间倒序展示，便于后台统一检索账号。
-        </p>
-      </div>
-
-      <div class="list-page__summary">
-        <div class="list-page__summary-item">
-          <span>记录总数</span>
-          <strong>{{ pageData.total }}</strong>
-        </div>
-        <div class="list-page__summary-item">
-          <span>当前页码</span>
-          <strong>{{ query.pageNum }}</strong>
-        </div>
-        <el-button type="primary" plain :loading="loading" @click="fetchList">刷新列表</el-button>
-      </div>
-    </section>
-
     <el-card shadow="never" class="list-page__card">
       <template #header>
         <div class="list-page__card-head">
           <span>管理员列表</span>
-          <el-tag effect="plain" type="warning">pageNum={{ query.pageNum }} / pageSize={{ query.pageSize }}</el-tag>
         </div>
       </template>
 
@@ -103,16 +80,9 @@ onMounted(() => {
       </el-table>
 
       <div class="list-page__footer">
-        <el-pagination
-          background
-          layout="total, sizes, prev, pager, next"
-          :current-page="query.pageNum"
-          :page-size="query.pageSize"
-          :page-sizes="[10, 20, 50]"
-          :total="pageData.total"
-          @current-change="handleCurrentChange"
-          @size-change="handleSizeChange"
-        />
+        <el-pagination background layout="total, sizes, prev, pager, next" :current-page="query.pageNum"
+          :page-size="query.pageSize" :page-sizes="[10, 20, 50]" :total="pageData.total"
+          @current-change="handleCurrentChange" @size-change="handleSizeChange" />
       </div>
     </el-card>
   </div>

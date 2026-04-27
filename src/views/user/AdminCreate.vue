@@ -116,24 +116,6 @@ async function handleSubmit() {
 
 <template>
   <div class="admin-create" :class="{ 'admin-create--embedded': embedded }">
-    <section class="admin-create__hero glass-card">
-      <div>
-        <p class="admin-create__eyebrow">Super Admin Only</p>
-        <h1 class="admin-create__title">新增管理员</h1>
-        <p class="admin-create__desc">
-          这个页面严格按照后端接口要求提交操作人账号和密码。前端不会缓存
-          <code>operatorPassword</code>，避免明文长期保留。
-        </p>
-      </div>
-
-      <el-alert
-        title="只有超级管理员可以新增管理员，普通管理员即使访问页面也会被权限拦截。"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
-    </section>
-
     <el-card shadow="never" class="admin-create__card">
       <template #header>
         <div class="admin-create__card-head">
@@ -144,105 +126,48 @@ async function handleSubmit() {
         </div>
       </template>
 
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="rules"
-        label-position="top"
-        @submit.prevent="handleSubmit"
-      >
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="handleSubmit">
         <div class="form-grid">
           <el-form-item label="操作人账号" prop="operatorUsername">
-            <el-input
-              v-model.trim="form.operatorUsername"
-              :disabled="canCreateAdmin && Boolean(userStore.username)"
-              placeholder="请输入超级管理员账号"
-              size="large"
-              clearable
-            />
+            <el-input v-model.trim="form.operatorUsername" :disabled="canCreateAdmin && Boolean(userStore.username)"
+              placeholder="请输入超级管理员账号" size="large" clearable />
           </el-form-item>
 
           <el-form-item label="操作人密码" prop="operatorPassword">
-            <el-input
-              v-model="form.operatorPassword"
-              placeholder="请输入当前超级管理员密码"
-              size="large"
-              show-password
-              clearable
-            />
+            <el-input v-model="form.operatorPassword" placeholder="请输入当前超级管理员密码" size="large" show-password clearable />
           </el-form-item>
 
           <el-form-item label="新管理员账号" prop="username">
-            <el-input
-              v-model.trim="form.username"
-              placeholder="请输入新管理员账号"
-              size="large"
-              clearable
-            />
+            <el-input v-model.trim="form.username" placeholder="请输入新管理员账号" size="large" clearable />
           </el-form-item>
 
           <el-form-item label="新管理员密码" prop="password">
-            <el-input
-              v-model="form.password"
-              placeholder="请输入新管理员密码"
-              size="large"
-              show-password
-              clearable
-            />
+            <el-input v-model="form.password" placeholder="请输入新管理员密码" size="large" show-password clearable />
           </el-form-item>
 
           <el-form-item label="真实姓名">
-            <el-input
-              v-model.trim="form.realName"
-              placeholder="例如：张三"
-              size="large"
-              clearable
-            />
+            <el-input v-model.trim="form.realName" placeholder="例如：张三" size="large" clearable />
           </el-form-item>
 
           <el-form-item label="所属景区">
-            <el-input
-              v-model.trim="form.scenicSpot"
-              placeholder="例如：西湖景区"
-              size="large"
-              clearable
-            />
+            <el-input v-model.trim="form.scenicSpot" placeholder="例如：西湖景区" size="large" clearable />
           </el-form-item>
 
           <el-form-item label="手机号" prop="phone">
-            <el-input
-              v-model.trim="form.phone"
-              placeholder="11 位手机号"
-              size="large"
-              clearable
-            />
+            <el-input v-model.trim="form.phone" placeholder="11 位手机号" size="large" clearable />
           </el-form-item>
 
           <el-form-item label="邮箱" prop="email">
-            <el-input
-              v-model.trim="form.email"
-              placeholder="请输入邮箱"
-              size="large"
-              clearable
-            />
+            <el-input v-model.trim="form.email" placeholder="请输入邮箱" size="large" clearable />
           </el-form-item>
 
           <el-form-item label="头像地址" class="form-grid__full">
-            <el-input
-              v-model.trim="form.avatarUrl"
-              placeholder="https://example.com/avatar.png"
-              size="large"
-              clearable
-            />
+            <el-input v-model.trim="form.avatarUrl" placeholder="https://example.com/avatar.png" size="large"
+              clearable />
           </el-form-item>
 
           <el-form-item label="备注" class="form-grid__full">
-            <el-input
-              v-model="form.remark"
-              type="textarea"
-              :rows="4"
-              placeholder="例如：负责票务、讲解或活动运营"
-            />
+            <el-input v-model="form.remark" type="textarea" :rows="4" placeholder="例如：负责票务、讲解或活动运营" />
           </el-form-item>
         </div>
 
@@ -250,10 +175,7 @@ async function handleSubmit() {
           <el-button type="primary" size="large" :loading="loading" @click="handleSubmit">
             提交新增
           </el-button>
-          <el-button
-            size="large"
-            @click="embedded ? emit('navigate', 'overview') : router.push('/dashboard')"
-          >
+          <el-button size="large" @click="embedded ? emit('navigate', 'overview') : router.push('/dashboard')">
             返回控制台
           </el-button>
         </div>
@@ -346,6 +268,7 @@ code {
 }
 
 @media (max-width: 1024px) {
+
   .admin-create__hero,
   .form-grid {
     grid-template-columns: 1fr;

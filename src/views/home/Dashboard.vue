@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { pinia, useUserStore } from '@/stores'
@@ -14,13 +14,18 @@ import NormalUserDetail from '@/views/user/NormalUserDetail.vue'
 import NormalUserList from '@/views/user/NormalUserList.vue'
 import UserProfileEdit from '@/views/user/UserProfileEdit.vue'
 
+const MapWorkspace = defineAsyncComponent(() => import('@/views/map/MapWorkspace.vue'))
+
 const DEFAULT_AVATAR = '/default-avatar.svg'
+const MOBILE_BREAKPOINT = 1180
 
 const router = useRouter()
 const userStore = useUserStore(pinia)
 
 const activeMenu = ref('overview')
 const avatarLoadFailed = ref(false)
+const isCompactSidebar = ref(false)
+const isSidebarOpen = ref(false)
 
 const canUseAnalysis = computed(() => userStore.isSuperAdmin)
 const canUseUserManagement = computed(() => userStore.isAdmin)
@@ -109,6 +114,13 @@ const actionCards = computed(() => {
       actionText: '打开用户管理',
       actionKey: 'user-admin-list',
     })
+
+    cards.push({
+      title: '景区地图联调',
+      description: '进入景区、景点、路线和地图初始化的一体化业务控制台。',
+      actionText: '打开景区管理',
+      actionKey: 'map-workspace',
+    })
   }
 
   if (canUseAnalysis.value) {
@@ -145,6 +157,7 @@ const capabilityList = computed(() => {
     return [
       '可以维护当前账号资料，并实时同步头像和昵称。',
       '可以查询管理员与普通用户详情，并查看分页列表。',
+      '可以进入景区地图业务控制台，联调景区、景点、路线、空间要素和交互日志。',
       '超管专属能力会根据权限自动隐藏。',
     ]
   }
@@ -174,6 +187,12 @@ const menuItems = computed(() => {
   }
 
   if (canUseUserManagement.value) {
+    items.push({
+      key: 'scenic-management',
+      label: '景区管理',
+      children: [{ key: 'map-workspace', label: '地图业务控制台' }],
+    })
+
     items.push({
       key: 'user-management',
       label: '用户管理',
@@ -221,13 +240,25 @@ watch(
   },
 )
 
+watch(isCompactSidebar, (compact) => {
+  if (!compact) {
+    isSidebarOpen.value = false
+  }
+})
+
 function handleMenuSelect(key) {
   activeMenu.value = key
+  if (isCompactSidebar.value) {
+    isSidebarOpen.value = false
+  }
 }
 
 function handleActionNavigate(actionKey) {
   if (flatMenuItems.value.some((item) => item.key === actionKey)) {
     activeMenu.value = actionKey
+    if (isCompactSidebar.value) {
+      isSidebarOpen.value = false
+    }
   }
 }
 
@@ -237,6 +268,9 @@ function handleAvatarError() {
 
 function handleProfileEdit() {
   activeMenu.value = 'profile-edit'
+  if (isCompactSidebar.value) {
+    isSidebarOpen.value = false
+  }
 }
 
 async function handleLogout() {
@@ -253,12 +287,39 @@ async function handleLogout() {
     return
   }
 }
+
+function syncCompactSidebar() {
+  if (typeof window === 'undefined') return
+  isCompactSidebar.value = window.innerWidth <= MOBILE_BREAKPOINT
+}
+
+function toggleSidebar() {
+  if (!isCompactSidebar.value) return
+  isSidebarOpen.value = !isSidebarOpen.value
+}
+
+function closeSidebar() {
+  isSidebarOpen.value = false
+}
+
+onMounted(() => {
+  syncCompactSidebar()
+  window.addEventListener('resize', syncCompactSidebar)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncCompactSidebar)
+})
 </script>
 
 <template>
   <div class="dashboard-workspace">
-    <section class="dashboard-workspace__frame glass-card">
-      <aside class="dashboard-sidebar">
+    <section class="dashboard-workspace__frame glass-card"
+      :class="{ 'dashboard-workspace__frame--compact': isCompactSidebar }">
+      <aside class="dashboard-sidebar" :class="{
+        'dashboard-sidebar--compact': isCompactSidebar,
+        'dashboard-sidebar--open': isCompactSidebar && isSidebarOpen,
+      }">
         <div class="dashboard-user">
           <div class="dashboard-user__top">
             <div class="dashboard-user__avatar">
@@ -288,7 +349,7 @@ async function handleLogout() {
 
         <div class="dashboard-sidebar__brand">
           <p class="dashboard-sidebar__eyebrow">Wanlv Console</p>
-          <h1 class="dashboard-sidebar__title">Dashboard</h1>
+          <h1 class="dashboard-sidebar__title">菜单栏</h1>
         </div>
 
         <el-menu :default-active="activeMenu" class="dashboard-menu" @select="handleMenuSelect">
@@ -298,12 +359,8 @@ async function handleLogout() {
                 <span class="dashboard-menu__label">{{ item.label }}</span>
               </template>
 
-              <el-menu-item
-                v-for="child in item.children"
-                :key="child.key"
-                :index="child.key"
-                class="dashboard-menu__item dashboard-menu__item--child"
-              >
+              <el-menu-item v-for="child in item.children" :key="child.key" :index="child.key"
+                class="dashboard-menu__item dashboard-menu__item--child">
                 <span class="dashboard-menu__label">{{ child.label }}</span>
               </el-menu-item>
             </el-sub-menu>
@@ -315,31 +372,34 @@ async function handleLogout() {
         </el-menu>
       </aside>
 
+      <transition name="dashboard-sidebar-mask">
+        <button v-if="isCompactSidebar && isSidebarOpen" type="button" class="dashboard-sidebar__mask" aria-label="关闭菜单"
+          @click="closeSidebar" />
+      </transition>
+
       <div class="dashboard-content">
         <header class="dashboard-content__header">
-          <div>
-            <p class="dashboard-content__eyebrow">当前模块</p>
-            <h2 class="dashboard-content__title">{{ currentMenuLabel }}</h2>
+          <div class="dashboard-content__header-main">
+            <button v-if="isCompactSidebar" type="button" class="dashboard-content__menu-toggle"
+              :aria-expanded="isSidebarOpen" :aria-label="isSidebarOpen ? '关闭菜单' : '打开菜单'" @click="toggleSidebar">
+              <span />
+              <span />
+              <span />
+            </button>
+
+            <div>
+              <p class="dashboard-content__eyebrow">当前模块</p>
+              <h2 class="dashboard-content__title">{{ currentMenuLabel }}</h2>
+            </div>
           </div>
         </header>
 
         <div class="dashboard-content__body">
-          <DashboardOverview
-            v-if="activeMenu === 'overview'"
-            :target-base-url="targetBaseUrl"
-            :username="userStore.username"
-            :display-name="userStore.displayName"
-            :role-label="roleLabel"
-            :hero-title="heroTitle"
-            :hero-description="heroDescription"
-            :hero-alert="heroAlert"
-            :can-use-analysis="canUseAnalysis"
-            :user-summary="userSummary"
-            :action-cards="actionCards"
-            :capability-list="capabilityList"
-            :api-notes="apiNotes"
-            @navigate="handleActionNavigate"
-          />
+          <DashboardOverview v-if="activeMenu === 'overview'" :target-base-url="targetBaseUrl"
+            :username="userStore.username" :display-name="userStore.displayName" :role-label="roleLabel"
+            :hero-title="heroTitle" :hero-description="heroDescription" :hero-alert="heroAlert"
+            :can-use-analysis="canUseAnalysis" :user-summary="userSummary" :action-cards="actionCards"
+            :capability-list="capabilityList" :api-notes="apiNotes" @navigate="handleActionNavigate" />
 
           <UserProfileEdit v-else-if="activeMenu === 'profile-edit'" />
 
@@ -348,6 +408,8 @@ async function handleLogout() {
           <DailyReport v-else-if="activeMenu === 'daily-report'" />
 
           <AdminCreate v-else-if="activeMenu === 'admin-create-page'" embedded @navigate="handleActionNavigate" />
+
+          <MapWorkspace v-else-if="activeMenu === 'map-workspace'" />
 
           <AdminUserDetail v-else-if="activeMenu === 'user-admin-detail'" />
 
@@ -364,19 +426,11 @@ async function handleLogout() {
               </div>
             </template>
 
-            <el-empty
-              description="当前账号不是管理员，因此用户管理、日报管理和新增管理员等能力不会开放。你仍然可以继续使用概览、修改信息和聊天功能。"
-              :image-size="96"
-            />
+            <el-empty description="当前账号不是管理员，因此用户管理、日报管理和新增管理员等能力不会开放。你仍然可以继续使用概览、修改信息和聊天功能。" :image-size="96" />
 
             <div v-if="isAdminUser" class="permission-card__tips">
-              <el-alert
-                title="管理员账号已具备用户管理能力"
-                description="如果菜单没有显示，请重新登录或刷新当前页面同步权限状态。"
-                type="info"
-                :closable="false"
-                show-icon
-              />
+              <el-alert title="管理员账号已具备用户管理能力" description="如果菜单没有显示，请重新登录或刷新当前页面同步权限状态。" type="info" :closable="false"
+                show-icon />
             </div>
           </el-card>
         </div>
@@ -395,6 +449,7 @@ async function handleLogout() {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 24px;
+  position: relative;
   height: 100%;
   padding: 24px;
   overflow: hidden;
@@ -552,6 +607,16 @@ async function handleLogout() {
   font-weight: 700;
 }
 
+.dashboard-sidebar__mask {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  border: 0;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+}
+
 .dashboard-content {
   display: flex;
   flex-direction: column;
@@ -564,6 +629,36 @@ async function handleLogout() {
 .dashboard-content__header {
   flex: 0 0 auto;
   padding: 8px 6px 0;
+}
+
+.dashboard-content__header-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dashboard-content__menu-toggle {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+}
+
+.dashboard-content__menu-toggle span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: #0f172a;
 }
 
 .dashboard-content__eyebrow {
@@ -611,9 +706,40 @@ async function handleLogout() {
   margin-top: 20px;
 }
 
+.dashboard-sidebar-mask-enter-active,
+.dashboard-sidebar-mask-leave-active {
+  transition: opacity 0.24s ease;
+}
+
+.dashboard-sidebar-mask-enter-from,
+.dashboard-sidebar-mask-leave-to {
+  opacity: 0;
+}
+
 @media (max-width: 1180px) {
   .dashboard-workspace__frame {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-workspace__frame--compact {
+    gap: 16px;
+  }
+
+  .dashboard-sidebar--compact {
+    position: absolute;
+    top: 24px;
+    left: 24px;
+    bottom: 24px;
+    z-index: 20;
+    width: min(320px, calc(100vw - 48px));
+    max-width: calc(100vw - 48px);
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.22);
+    transform: translateX(calc(-100% - 24px));
+    transition: transform 0.28s ease;
+  }
+
+  .dashboard-sidebar--compact.dashboard-sidebar--open {
+    transform: translateX(0);
   }
 }
 
@@ -628,6 +754,19 @@ async function handleLogout() {
 
   .dashboard-sidebar {
     padding: 18px;
+  }
+
+  .dashboard-sidebar--compact {
+    top: 16px;
+    left: 16px;
+    bottom: 16px;
+    width: min(320px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    transform: translateX(calc(-100% - 16px));
+  }
+
+  .dashboard-content__header {
+    padding-top: 0;
   }
 }
 </style>

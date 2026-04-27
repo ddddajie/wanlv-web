@@ -9,13 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@turf/turf": "^7.3.5",
     "axios": "^1.14.0",
     "element-plus": "^2.13.6",
+    "maplibre-gl": "^5.23.0",
     "pinia": "^2.2.6",
+    "turf": "^3.0.14",
     "vue": "^3.5.30",
     "vue-router": "^5.0.4"
   },
-    "devDependencies": {
+  "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.4",
     "husky": "^8.0.0",
     "lint-staged": "^15.2.10",

@@ -35,22 +35,6 @@ onMounted(() => {
 
 <template>
   <div class="detail-page">
-    <section class="detail-page__hero glass-card">
-      <div>
-        <p class="detail-page__eyebrow">Admin Query</p>
-        <h2 class="detail-page__title">管理员详情查询</h2>
-        <p class="detail-page__desc">
-          根据管理员 ID 调用 <code>/user/admin/{id}</code>，用于查看指定管理员的完整资料信息。
-        </p>
-      </div>
-
-      <div class="detail-page__actions">
-        <el-input-number v-model="form.id" :min="1" class="detail-page__number" />
-        <el-button type="primary" :loading="loading" @click="handleSearch">查询详情</el-button>
-        <el-button plain @click="useCurrentAdmin">查询当前登录管理员</el-button>
-      </div>
-    </section>
-
     <el-card shadow="never" class="detail-page__card">
       <template #header>
         <div class="detail-page__card-head">
@@ -60,6 +44,12 @@ onMounted(() => {
           </el-tag>
         </div>
       </template>
+
+      <div class="detail-page__toolbar">
+        <el-input-number v-model="form.id" :min="1" class="detail-page__number" />
+        <el-button type="primary" :loading="loading" @click="handleSearch">查询详情</el-button>
+        <el-button plain @click="useCurrentAdmin">查询当前登录管理员</el-button>
+      </div>
 
       <el-empty v-if="!detail && !loading" description="请输入管理员 ID 后查询" :image-size="90" />
 
@@ -95,45 +85,6 @@ onMounted(() => {
   gap: 20px;
 }
 
-.detail-page__hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
-  gap: 20px;
-  padding: 28px;
-}
-
-.detail-page__eyebrow {
-  margin: 0 0 10px;
-  color: #b45309;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.detail-page__title {
-  margin: 0;
-  color: #0f172a;
-  font-size: clamp(28px, 4vw, 38px);
-}
-
-.detail-page__desc {
-  margin: 14px 0 0;
-  color: #475569;
-  line-height: 1.8;
-}
-
-.detail-page__actions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  justify-content: center;
-}
-
-.detail-page__number {
-  width: 100%;
-}
-
 .detail-page__card {
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 24px;
@@ -152,6 +103,18 @@ onMounted(() => {
   color: #0f172a;
   font-size: 18px;
   font-weight: 700;
+}
+
+.detail-page__toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.detail-page__number {
+  width: 220px;
 }
 
 .detail-page__content {
@@ -179,16 +142,17 @@ onMounted(() => {
   width: 120px;
 }
 
-code {
-  padding: 2px 6px;
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.06);
-}
-
 @media (max-width: 980px) {
-  .detail-page__hero,
   .detail-page__content {
     grid-template-columns: 1fr;
+  }
+
+  .detail-page__number {
+    width: 100%;
+  }
+
+  .detail-page__toolbar {
+    align-items: stretch;
   }
 }
 </style>
