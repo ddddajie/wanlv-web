@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@element-plus/icons-vue':
+        specifier: ^2.3.2
+        version: 2.3.2(vue@3.5.31)
       '@turf/turf':
         specifier: ^7.3.5
         version: 7.3.5
