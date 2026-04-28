@@ -21,6 +21,7 @@ import {
   createRouteGeoApi,
   createScenicAreaApi,
   createSpotApi,
+  generateRouteGeoApi,
   getMapInitApi,
   getRouteDetailApi,
   getScenicAreaDetailApi,
@@ -37,6 +38,7 @@ import {
   updateSpotApi,
 } from '@/api/map'
 import MapCanvas from './MapCanvas.vue'
+import FeatureGeometryPicker from './FeatureGeometryPicker.vue'
 import ScenicAreaPicker from './ScenicAreaPicker.vue'
 import SpotLocationPicker from './SpotLocationPicker.vue'
 import {
@@ -58,6 +60,7 @@ const userStore = useUserStore(pinia)
 const allowAccess = computed(() => userStore.isAdmin)
 const activeTab = ref('scenic')
 const selectedScenicId = ref(null)
+const visibleRouteIds = ref([])
 const mapInit = ref(null)
 const spotOptions = ref([])
 const geoFeatureList = ref([])
@@ -69,6 +72,7 @@ const spotPage = ref({ total: 0, records: [] })
 const routePage = ref({ total: 0, records: [] })
 const routeGeoList = ref([])
 const routeGeoRoute = ref(null)
+const routeGeoGenerateWarnings = ref([])
 const routeDetail = ref(null)
 const spotDetail = ref(null)
 
@@ -89,6 +93,7 @@ const submitting = reactive({
   route: false,
   feature: false,
   routeGeo: false,
+  routeGeoGenerate: false,
   interaction: false,
 })
 
@@ -179,6 +184,10 @@ const featureForm = reactive({
   scenicAreaId: '',
   featureName: '',
   featureType: 'BOUNDARY',
+  geometryType: 'POLYGON',
+  featureSubType: '',
+  lengthMeters: '',
+  propertiesJson: '',
   geojson: '',
   status: 1,
   deleted: 0,
@@ -222,7 +231,9 @@ const routeRules = {
 const featureRules = {
   scenicAreaId: [{ required: true, message: '请选择所属景区', trigger: 'change' }],
   featureName: [{ required: true, message: '请输入要素名称', trigger: 'blur' }],
-  geojson: [{ required: true, message: '请输入 GeoJSON', trigger: 'blur' }],
+  featureType: [{ required: true, message: '请选择要素类型', trigger: 'change' }],
+  geometryType: [{ required: true, message: '请选择几何类型', trigger: 'change' }],
+  geojson: [{ required: true, message: '请在地图上绘制空间要素', trigger: 'change' }],
 }
 const routeGeoRules = {
   routeId: [{ required: true, message: '请输入路线 ID', trigger: 'blur' }],
@@ -248,6 +259,18 @@ const spotPickerMapData = computed(() => {
     geoFeatures: scenicAreaId === mapScenicAreaId ? mapInit.value?.geoFeatures || [] : [],
   }
 })
+const featureScenicArea = computed(() => scenicOptions.value.find((item) => Number(item.id) === Number(featureForm.scenicAreaId)) || selectedScenic.value)
+const featurePickerMapData = computed(() => {
+  const scenicAreaId = Number(featureForm.scenicAreaId || selectedScenicId.value)
+  const mapScenicAreaId = Number(mapInit.value?.scenicArea?.id)
+  return {
+    scenicArea: scenicAreaId === mapScenicAreaId ? mapInit.value?.scenicArea : featureScenicArea.value,
+    geoFeatures: scenicAreaId === mapScenicAreaId ? mapInit.value?.geoFeatures || [] : geoFeatureList.value.filter((item) => Number(item.scenicAreaId) === scenicAreaId),
+  }
+})
+const officialRouteList = computed(() =>
+  (mapInit.value?.routes || []).filter((route) => String(route.routeType || '').trim() === 'official'),
+)
 const routeGeoMetrics = computed(() => summarizeGeojson(routeGeoForm.geojson))
 const featureMetrics = computed(() => summarizeGeojson(featureForm.geojson))
 const routeDetailMetrics = computed(() => summarizeGeojson(routeDetail.value?.routeGeo?.geojson))
@@ -270,7 +293,52 @@ const spotIconOptions = [
   { label: '建筑', value: 'BUILDING', icon: House },
   { label: '停车', value: 'PARKING', icon: Van },
 ]
+const routeTypeOptions = [
+  { label: '官方推荐', value: 'official' },
+  { label: '自定义路线', value: 'custom' },
+  { label: '亲子路线', value: 'family' },
+  { label: '老人友好', value: 'elder' },
+  { label: '文化深度', value: 'culture' },
+  { label: '拍照打卡', value: 'photo' },
+  { label: '轻松游览', value: 'leisure' },
+]
+const featureTypeOptions = [
+  { label: '景区边界', value: 'BOUNDARY' },
+  { label: '功能分区', value: 'ZONE' },
+  { label: '限制区域', value: 'RESTRICTED' },
+  { label: '入口区域', value: 'ENTRANCE_AREA' },
+  { label: '道路', value: 'ROAD' },
+]
+const geometryTypeOptions = [
+  { label: '点', value: 'POINT' },
+  { label: '线', value: 'LINE' },
+  { label: '面', value: 'POLYGON' },
+]
+const featureSubTypeOptions = [
+  { label: '步行道路', value: 'WALK' },
+  { label: '车行道路', value: 'DRIVE' },
+  { label: '游览步道', value: 'TOUR' },
+  { label: '服务通道', value: 'SERVICE' },
+]
+const roadLegendOptions = [
+  { label: '步行道路', color: '#cbd5e1' },
+  { label: '车行道路', color: '#fdba74' },
+  { label: '游览步道', color: '#86efac' },
+  { label: '服务通道', color: '#93c5fd' },
+]
 const poiTypeLabelMap = Object.fromEntries(poiTypeOptions.map((item) => [item.value, item.label]))
+const routeTypeLabelMap = Object.fromEntries(routeTypeOptions.map((item) => [item.value, item.label]))
+const featureTypeLabelMap = Object.fromEntries(featureTypeOptions.map((item) => [item.value, item.label]))
+const geometryTypeLabelMap = Object.fromEntries(geometryTypeOptions.map((item) => [item.value, item.label]))
+const featureSubTypeLabelMap = Object.fromEntries(featureSubTypeOptions.map((item) => [item.value, item.label]))
+const geojsonGeometryTypeLabelMap = {
+  Point: '点',
+  MultiPoint: '多点',
+  LineString: '线',
+  MultiLineString: '多线',
+  Polygon: '面',
+  MultiPolygon: '多面',
+}
 const boundsText = computed(() => {
   const bounds = parseMapBounds(mapInit.value?.scenicArea?.mapBoundsJson)
   return bounds ? `W ${bounds.west} / S ${bounds.south} / E ${bounds.east} / N ${bounds.north}` : '未配置'
@@ -278,6 +346,66 @@ const boundsText = computed(() => {
 
 function formatPoiType(value) {
   return poiTypeLabelMap[value] || value || '-'
+}
+
+function formatRouteType(value) {
+  return routeTypeLabelMap[String(value || '').trim()] || value || '-'
+}
+
+function formatFeatureType(value) {
+  return featureTypeLabelMap[value] || value || '-'
+}
+
+function formatGeometryType(value) {
+  return geometryTypeLabelMap[value] || value || '-'
+}
+
+function formatFeatureSubType(value) {
+  return featureSubTypeLabelMap[value] || value || '-'
+}
+
+function formatGeojsonSummary(geojson) {
+  const summary = summarizeGeojson(geojson)
+  if (!summary) return '未知'
+
+  return Array.from(summary.typeSet)
+    .map((type) => geojsonGeometryTypeLabelMap[type] || type)
+    .join('、')
+}
+
+function formatOptionalDistance(value) {
+  return value === null || value === undefined || value === '' ? '-' : formatDistance(value)
+}
+
+function inferGeometryType(summary) {
+  const types = summary ? Array.from(summary.typeSet) : []
+  if (!types.length) return ''
+  if (types.some((type) => type === 'Point' || type === 'MultiPoint')) return 'POINT'
+  if (types.some((type) => type === 'LineString' || type === 'MultiLineString')) return 'LINE'
+  if (types.some((type) => type === 'Polygon' || type === 'MultiPolygon')) return 'POLYGON'
+  return ''
+}
+
+function isRouteVisible(routeId) {
+  return visibleRouteIds.value.some((item) => Number(item) === Number(routeId))
+}
+
+function hasRouteGeojson(route) {
+  return Boolean(route?.geojson)
+}
+
+function toggleRouteVisible(route) {
+  if (!hasRouteGeojson(route)) {
+    ElMessage.warning('该路线暂未配置轨迹')
+    return
+  }
+
+  const routeId = Number(route.id)
+  if (!Number.isFinite(routeId)) return
+
+  visibleRouteIds.value = isRouteVisible(routeId)
+    ? visibleRouteIds.value.filter((item) => Number(item) !== routeId)
+    : [...visibleRouteIds.value, routeId]
 }
 
 const mapStats = computed(() => {
@@ -385,6 +513,10 @@ function resetFeatureForm() {
     scenicAreaId: selectedScenicId.value || '',
     featureName: '',
     featureType: 'BOUNDARY',
+    geometryType: 'POLYGON',
+    featureSubType: '',
+    lengthMeters: '',
+    propertiesJson: '',
     geojson: '',
     status: 1,
     deleted: 0,
@@ -399,6 +531,7 @@ function resetRouteGeoForm() {
     version: '',
     status: 1,
   })
+  routeGeoGenerateWarnings.value = []
   modes.routeGeo = 'create'
 }
 
@@ -632,6 +765,18 @@ function applySpotLocation(location) {
   spotForm.latitude = location.latitude.toFixed(6)
 }
 
+function applyFeatureGeometry(payload) {
+  featureForm.geojson = payload.geojson || ''
+  if (payload.lengthMeters !== '' && payload.lengthMeters !== null && payload.lengthMeters !== undefined) {
+    featureForm.lengthMeters = payload.lengthMeters
+    return
+  }
+
+  if (featureForm.geometryType !== 'LINE') {
+    featureForm.lengthMeters = ''
+  }
+}
+
 function openRouteCreate() {
   modes.route = 'create'
   resetRouteForm()
@@ -657,7 +802,13 @@ function openFeatureCreate() {
 function openFeatureEdit(row) {
   modes.feature = 'edit'
   resetFeatureForm()
-  Object.assign(featureForm, row)
+  const summary = summarizeGeojson(row.geojson)
+  Object.assign(featureForm, row, {
+    geometryType: row.geometryType || inferGeometryType(summary) || (row.featureType === 'ROAD' ? 'LINE' : 'POLYGON'),
+    featureSubType: row.featureSubType || '',
+    lengthMeters: row.lengthMeters ?? '',
+    propertiesJson: stringifyJson(row.propertiesJson),
+  })
   dialogs.feature = true
 }
 
@@ -676,7 +827,61 @@ async function openRouteGeo(row) {
 
 function editRouteGeo(row) {
   modes.routeGeo = 'edit'
+  routeGeoGenerateWarnings.value = []
   Object.assign(routeGeoForm, row)
+}
+
+function getNextRouteGeoVersion() {
+  const versions = routeGeoList.value
+    .map((item) => Number(item.version))
+    .filter((version) => Number.isFinite(version))
+  return versions.length ? Math.max(...versions) + 1 : 1
+}
+
+function formatRouteGeoWarning(warning) {
+  if (!warning) return ''
+  if (typeof warning === 'string') return warning
+  return warning.message || warning.msg || warning.code || JSON.stringify(warning)
+}
+
+async function generateRouteGeo() {
+  const routeId = toNullableNumber(routeGeoForm.routeId || routeGeoRoute.value?.id)
+  if (routeId === null) {
+    ElMessage.warning('请先选择路线后再生成轨迹')
+    return
+  }
+
+  submitting.routeGeoGenerate = true
+  try {
+    const result = await generateRouteGeoApi(routeId, {
+      saveAsVersion: false,
+      snapToleranceMeters: 80,
+      fallbackStrategy: 'DIRECT_SEGMENT',
+    })
+    const generatedGeojson = result?.geojson || (result?.type ? result : null)
+    if (!generatedGeojson) {
+      ElMessage.warning('后端未返回可用的轨迹 GeoJSON')
+      return
+    }
+
+    routeGeoForm.routeId = routeId
+    routeGeoForm.geojson = stringifyJson(generatedGeojson)
+    if (result?.version !== undefined && result?.version !== null) {
+      routeGeoForm.version = result.version
+    } else if (!routeGeoForm.version) {
+      routeGeoForm.version = getNextRouteGeoVersion()
+    }
+    routeGeoGenerateWarnings.value = Array.isArray(result?.warnings) ? result.warnings : []
+    routeGeoRef.value?.clearValidate?.(['geojson'])
+
+    if (routeGeoGenerateWarnings.value.length) {
+      ElMessage.warning('轨迹已生成，但存在需要确认的提示')
+    } else {
+      ElMessage.success('轨迹已自动生成，请确认后保存')
+    }
+  } finally {
+    submitting.routeGeoGenerate = false
+  }
 }
 
 function addRouteSpot() {
@@ -801,7 +1006,15 @@ async function submitFeature() {
   if (!valid) return
   submitting.feature = true
   try {
-    const payload = cleanPayload({ ...featureForm }, ['id', 'scenicAreaId', 'status', 'deleted'])
+    const summary = featureMetrics.value
+    const payload = cleanPayload(
+      {
+        ...featureForm,
+        geometryType: featureForm.geometryType || inferGeometryType(summary),
+        lengthMeters: featureForm.lengthMeters || (summary?.lengthMeters ? summary.lengthMeters.toFixed(2) : ''),
+      },
+      ['id', 'scenicAreaId', 'lengthMeters', 'status', 'deleted'],
+    )
     if (modes.feature === 'create') {
       await createGeoFeatureApi(payload)
       ElMessage.success(`空间要素 ${payload.featureName} 创建成功`)
@@ -847,11 +1060,21 @@ async function submitManualInteraction() {
 
 watch(selectedScenicId, async (value, oldValue) => {
   if (!value || value === oldValue) return
+  visibleRouteIds.value = []
   spotQuery.scenicAreaId = value
   routeQuery.scenicAreaId = value
   interactionForm.scenicAreaId = value
   await refreshSelectedScenicData()
 })
+
+watch(
+  () => featureForm.featureType,
+  (value) => {
+    if (modes.feature === 'edit') return
+    featureForm.geometryType = value === 'ROAD' ? 'LINE' : 'POLYGON'
+    if (value !== 'ROAD') featureForm.featureSubType = ''
+  },
+)
 
 onMounted(async () => {
   if (!allowAccess.value) return
@@ -954,7 +1177,9 @@ onMounted(async () => {
             <el-table :data="routePage.records" v-loading="loading.routes" stripe>
               <el-table-column prop="id" label="ID" min-width="70" />
               <el-table-column prop="routeName" label="路线名称" min-width="160" />
-              <el-table-column prop="routeType" label="类型" min-width="120" />
+              <el-table-column label="类型" min-width="120">
+                <template #default="{ row }">{{ formatRouteType(row.routeType) }}</template>
+              </el-table-column>
               <el-table-column label="长度" min-width="110">
                 <template #default="{ row }">
                   {{ formatDistance(toNullableNumber(row.distanceMeters) ?? summarizeRouteMeters(row.geojson)) }}
@@ -980,12 +1205,21 @@ onMounted(async () => {
             <el-table :data="geoFeatureList" v-loading="loading.features" stripe>
               <el-table-column prop="id" label="ID" min-width="70" />
               <el-table-column prop="featureName" label="要素名称" min-width="150" />
-              <el-table-column prop="featureType" label="要素类型" min-width="140" />
+              <el-table-column label="要素类型" min-width="140">
+                <template #default="{ row }">{{ formatFeatureType(row.featureType) }}</template>
+              </el-table-column>
+              <el-table-column label="几何类型" min-width="110">
+                <template #default="{ row }">{{ formatGeometryType(row.geometryType ||
+                  inferGeometryType(summarizeGeojson(row.geojson))) }}</template>
+              </el-table-column>
+              <el-table-column label="子类型" min-width="110">
+                <template #default="{ row }">{{ formatFeatureSubType(row.featureSubType) }}</template>
+              </el-table-column>
+              <el-table-column label="长度" min-width="110">
+                <template #default="{ row }">{{ formatOptionalDistance(row.lengthMeters) }}</template>
+              </el-table-column>
               <el-table-column label="几何摘要" min-width="170">
-                <template #default="{ row }">
-                  {{ summarizeGeojson(row.geojson) ? Array.from(summarizeGeojson(row.geojson).typeSet).join(', ') : '未知'
-                  }}
-                </template>
+                <template #default="{ row }">{{ formatGeojsonSummary(row.geojson) }}</template>
               </el-table-column>
               <el-table-column label="操作" min-width="120" fixed="right">
                 <template #default="{ row }">
@@ -1047,7 +1281,7 @@ onMounted(async () => {
         <section class="panel panel--map">
           <div class="panel__head">
             <div>
-              <p class="eyebrow">Map Init Preview</p>
+              <p class="eyebrow">景区地图</p>
               <h3>{{ mapInit?.scenicArea?.scenicName || '未选择景区' }}</h3>
             </div>
             <div class="tags">
@@ -1057,7 +1291,7 @@ onMounted(async () => {
             </div>
           </div>
           <div v-loading="loading.map" class="canvas-wrap">
-            <MapCanvas :map-data="mapInit" @spot-click="(id) => openSpotDetail(id, true)"
+            <MapCanvas :map-data="mapInit" :visible-route-ids="visibleRouteIds" @spot-click="(id) => openSpotDetail(id, true)"
               @route-click="(id) => openRouteDetail(id, true)" />
           </div>
           <div class="stats">
@@ -1067,24 +1301,35 @@ onMounted(async () => {
             </div>
           </div>
         </section>
-
         <section class="panel panel--side">
           <div class="block">
-            <p class="eyebrow">Scenic Summary</p>
+            <p class="eyebrow">景区简介</p>
             <h3>{{ selectedScenic?.scenicName || '请选择景区' }}</h3>
             <p>{{ mapInit?.scenicArea?.description || '当前景区尚未填写说明。' }}</p>
           </div>
           <div class="block">
-            <p class="eyebrow">Map Config</p>
-            <div class="block__grid">
-              <div><span>中心点</span><strong>{{ mapInit?.scenicArea?.mapCenterLng ?? '-' }}, {{
-                mapInit?.scenicArea?.mapCenterLat ?? '-' }}</strong></div>
-              <div><span>缩放</span><strong>{{ mapInit?.scenicArea?.defaultZoom ?? '-' }} / {{
-                mapInit?.scenicArea?.minZoom ??
-                '-' }} / {{ mapInit?.scenicArea?.maxZoom ?? '-' }}</strong></div>
-              <div><span>底图地址</span><strong class="break">{{ mapInit?.scenicArea?.mapBaseImageUrl || '未配置' }}</strong>
+            <div class="map-info-grid">
+              <div class="map-info-column">
+                <p class="eyebrow">说明</p>
+                <div class="road-legend">
+                  <div v-for="item in roadLegendOptions" :key="item.label" class="road-legend__item">
+                    <span class="road-legend__line" :style="{ backgroundColor: item.color }"></span>
+                    <strong>{{ item.label }}</strong>
+                  </div>
+                </div>
               </div>
-              <div><span>更新时间</span><strong>{{ formatDateTime(mapInit?.scenicArea?.updateTime) }}</strong></div>
+              <div class="map-info-column">
+                <p class="eyebrow">官方推荐路线</p>
+                <div class="route-toggle-list">
+                  <button v-for="route in officialRouteList" :key="route.id" type="button"
+                    class="route-toggle-list__item" :class="{ 'is-active': isRouteVisible(route.id), 'is-disabled': !hasRouteGeojson(route) }"
+                    @click="toggleRouteVisible(route)">
+                    <span>{{ route.routeName || `路线${route.id}` }}</span>
+                    <small>{{ hasRouteGeojson(route) ? (isRouteVisible(route.id) ? '点击隐藏' : '点击显示') : '未配置轨迹' }}</small>
+                  </button>
+                  <div v-if="!officialRouteList.length" class="muted">当前景区暂无官方推荐路线。</div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -1216,22 +1461,46 @@ onMounted(async () => {
         </template>
       </el-dialog>
 
-      <el-dialog v-model="dialogs.feature" :title="modes.feature === 'create' ? '新增空间要素' : '编辑空间要素'" width="860px">
+      <el-dialog v-model="dialogs.feature" :title="modes.feature === 'create' ? '新增空间要素' : '编辑空间要素'" width="960px">
         <el-form ref="featureRef" :model="featureForm" :rules="featureRules" label-position="top" class="form-grid">
           <el-form-item label="所属景区" prop="scenicAreaId"><el-select v-model="featureForm.scenicAreaId"><el-option
                 v-for="item in scenicOptions" :key="item.id" :label="item.scenicName"
                 :value="item.id" /></el-select></el-form-item>
           <el-form-item label="要素名称" prop="featureName"><el-input v-model="featureForm.featureName" /></el-form-item>
-          <el-form-item label="要素类型"><el-input v-model="featureForm.featureType" /></el-form-item>
+          <el-form-item label="要素类型" prop="featureType">
+            <el-select v-model="featureForm.featureType">
+              <el-option v-for="item in featureTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="几何类型" prop="geometryType">
+            <el-select v-model="featureForm.geometryType">
+              <el-option v-for="item in geometryTypeOptions" :key="item.value" :label="item.label"
+                :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="要素子类型">
+            <el-select v-model="featureForm.featureSubType" clearable allow-create filterable>
+              <el-option v-for="item in featureSubTypeOptions" :key="item.value" :label="item.label"
+                :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="长度(米)"><el-input v-model="featureForm.lengthMeters" /></el-form-item>
           <el-form-item label="状态"><el-switch v-model="featureForm.status" :active-value="1"
               :inactive-value="0" /></el-form-item>
           <el-form-item label="删除标记"><el-switch v-model="featureForm.deleted" :active-value="1"
               :inactive-value="0" /></el-form-item>
-          <el-form-item label="GeoJSON" class="span-2" prop="geojson"><el-input v-model="featureForm.geojson"
-              type="textarea" :rows="12" /></el-form-item>
+          <el-form-item label="扩展属性 JSON" class="span-2"><el-input v-model="featureForm.propertiesJson" type="textarea"
+              :rows="4" /></el-form-item>
+          <el-form-item label="地图绘制" class="span-2" prop="geojson">
+            <FeatureGeometryPicker v-if="dialogs.feature" :scenic-area="featurePickerMapData.scenicArea"
+              :geo-features="featurePickerMapData.geoFeatures" :exclude-feature-id="featureForm.id"
+              :geojson="featureForm.geojson" :geometry-type="featureForm.geometryType"
+              :label="featureForm.featureName || '空间要素'" @geometry-change="applyFeatureGeometry" />
+          </el-form-item>
         </el-form>
-        <div class="metric">几何类型：{{ featureMetrics ? Array.from(featureMetrics.typeSet).join(', ') : '未解析' }} ｜ 面积：{{
-          featureMetrics?.areaSquareMeters ? `${featureMetrics.areaSquareMeters.toFixed(2)} m²` : '-' }}</div>
+        <div class="metric">几何类型：{{ featureMetrics ? Array.from(featureMetrics.typeSet).join(', ') : '未解析' }} ｜ 长度：{{
+          formatDistance(featureMetrics?.lengthMeters || 0) }} ｜ 面积：{{ featureMetrics?.areaSquareMeters ?
+            `${featureMetrics.areaSquareMeters.toFixed(2)} m²` : '-' }}</div>
         <template #footer>
           <el-button @click="dialogs.feature = false">取消</el-button>
           <el-button type="primary" :loading="submitting.feature" @click="submitFeature">保存</el-button>
@@ -1260,6 +1529,12 @@ onMounted(async () => {
             </el-table>
           </div>
           <div class="block">
+            <div class="toolbar toolbar--tight">
+              <strong>轨迹编辑</strong>
+              <el-button type="primary" plain :loading="submitting.routeGeoGenerate" @click="generateRouteGeo">
+                自动生成轨迹
+              </el-button>
+            </div>
             <el-form ref="routeGeoRef" :model="routeGeoForm" :rules="routeGeoRules" label-position="top">
               <el-form-item label="路线 ID" prop="routeId"><el-input v-model="routeGeoForm.routeId" /></el-form-item>
               <el-form-item label="版本号"><el-input v-model="routeGeoForm.version" /></el-form-item>
@@ -1271,6 +1546,10 @@ onMounted(async () => {
             <div class="metric">几何类型：{{ routeGeoMetrics ? Array.from(routeGeoMetrics.typeSet).join(', ') : '未解析' }} ｜
               长度：{{
                 formatDistance(routeGeoMetrics?.lengthMeters || 0) }}</div>
+            <div v-if="routeGeoGenerateWarnings.length" class="route-geo-warnings">
+              <el-alert v-for="(warning, index) in routeGeoGenerateWarnings" :key="index" type="warning"
+                :title="formatRouteGeoWarning(warning)" show-icon :closable="false" />
+            </div>
           </div>
         </div>
         <template #footer>
@@ -1302,7 +1581,7 @@ onMounted(async () => {
           <template v-if="routeDetail">
             <div class="stats stats--detail">
               <div class="stat"><span>路线名称</span><strong>{{ routeDetail.route.routeName }}</strong></div>
-              <div class="stat"><span>类型</span><strong>{{ routeDetail.route.routeType || '-' }}</strong></div>
+              <div class="stat"><span>类型</span><strong>{{ formatRouteType(routeDetail.route.routeType) }}</strong></div>
               <div class="stat"><span>轨迹长度</span><strong>{{ formatDistance(routeDetailMetrics?.lengthMeters ||
                 routeDetail.route.distanceMeters || 0) }}</strong></div>
               <div class="stat"><span>轨迹版本</span><strong>{{ routeDetail.routeGeo?.version ?? '未配置' }}</strong></div>
@@ -1431,6 +1710,95 @@ onMounted(async () => {
   gap: 8px
 }
 
+.map-info-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, .85fr) minmax(0, 1.15fr);
+  gap: 18px;
+  align-items: start
+}
+
+.map-info-column {
+  min-width: 0
+}
+
+.map-info-column .eyebrow {
+  margin-bottom: 12px
+}
+
+.route-toggle-list {
+  display: grid;
+  gap: 10px
+}
+
+.route-toggle-list__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, .38);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .72);
+  color: #334155;
+  font: inherit;
+  text-align: left;
+  cursor: pointer
+}
+
+.route-toggle-list__item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-weight: 700
+}
+
+.route-toggle-list__item small {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap
+}
+
+.route-toggle-list__item.is-active {
+  border-color: rgba(249, 115, 22, .7);
+  background: rgba(255, 247, 237, .96);
+  box-shadow: inset 4px 0 0 #f97316
+}
+
+.route-toggle-list__item.is-disabled {
+  cursor: not-allowed;
+  opacity: .58
+}
+
+.road-legend {
+  display: grid;
+  gap: 12px
+}
+
+.road-legend__item {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px
+}
+
+.road-legend__line {
+  display: block;
+  width: 52px;
+  height: 4px;
+  border-radius: 999px
+}
+
+.road-legend__item strong {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700
+}
+
 .canvas-wrap {
   min-height: 430px
 }
@@ -1537,6 +1905,12 @@ onMounted(async () => {
   color: #334155
 }
 
+.route-geo-warnings {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px
+}
+
 .route-detail {
   display: grid;
   gap: 18px
@@ -1582,6 +1956,10 @@ onMounted(async () => {
 
   .stats,
   .stats--detail {
+    grid-template-columns: 1fr
+  }
+
+  .map-info-grid {
     grid-template-columns: 1fr
   }
 }

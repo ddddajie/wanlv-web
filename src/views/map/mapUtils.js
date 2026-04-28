@@ -196,16 +196,22 @@ export function buildRouteFeatureCollection(routes = []) {
 export function buildGeoFeatureCollection(features = []) {
   return {
     type: 'FeatureCollection',
-    features: features.flatMap((feature) =>
-      toFeatureList(feature.geojson, {
+    features: features.flatMap((feature) => {
+      const extraProperties = parseJsonText(feature.propertiesJson, {})
+      return toFeatureList(feature.geojson, {
+        ...(extraProperties && !Array.isArray(extraProperties) ? extraProperties : {}),
         id: feature.id,
         scenicAreaId: feature.scenicAreaId,
         featureName: feature.featureName,
         featureType: feature.featureType,
+        geometryType: feature.geometryType,
+        featureSubType: feature.featureSubType,
+        lengthMeters: toNullableNumber(feature.lengthMeters),
+        propertiesJson: feature.propertiesJson,
         status: Number(feature.status) || 0,
         deleted: Number(feature.deleted) || 0,
-      }),
-    ),
+      })
+    }),
   }
 }
 

@@ -39,6 +39,10 @@ const props = defineProps({
     type: String,
     default: '当前选择位置',
   },
+  visibleRouteIds: {
+    type: Array,
+    default: () => [],
+  },
 })
 
 const emit = defineEmits(['spot-click', 'route-click', 'location-pick'])
@@ -51,6 +55,7 @@ const SCENIC_BOUNDS_LINE_LAYER_ID = 'wanlv-map-scenic-bounds-line-layer'
 const FEATURE_SOURCE_ID = 'wanlv-map-feature-source'
 const FEATURE_FILL_LAYER_ID = 'wanlv-map-feature-fill-layer'
 const FEATURE_LINE_LAYER_ID = 'wanlv-map-feature-line-layer'
+const FEATURE_POINT_LAYER_ID = 'wanlv-map-feature-point-layer'
 const ROUTE_SOURCE_ID = 'wanlv-map-route-source'
 const ROUTE_LAYER_ID = 'wanlv-map-route-layer'
 const SPOT_LAYER_ID = 'wanlv-map-spot-layer'
@@ -238,6 +243,7 @@ function renderGeoFeatures() {
     id: FEATURE_FILL_LAYER_ID,
     type: 'fill',
     source: FEATURE_SOURCE_ID,
+    filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['!=', ['get', 'featureType'], 'ROAD']],
     paint: {
       'fill-color': [
         'match',
@@ -250,6 +256,8 @@ function renderGeoFeatures() {
         '#0f766e',
         'ENTRANCE_AREA',
         '#f59e0b',
+        'ROAD',
+        '#86efac',
         '#475569',
       ],
       'fill-opacity': 0.14,
@@ -262,6 +270,47 @@ function renderGeoFeatures() {
     source: FEATURE_SOURCE_ID,
     paint: {
       'line-color': [
+        'case',
+        ['==', ['get', 'featureType'], 'ROAD'],
+        [
+          'match',
+          ['get', 'featureSubType'],
+          'WALK',
+          '#cbd5e1',
+          'DRIVE',
+          '#fdba74',
+          'TOUR',
+          '#86efac',
+          'SERVICE',
+          '#93c5fd',
+          '#86efac',
+        ],
+        [
+          'match',
+          ['get', 'featureType'],
+          'BOUNDARY',
+          '#1d4ed8',
+          'RESTRICTED',
+          '#dc2626',
+          'ZONE',
+          '#0f766e',
+          'ENTRANCE_AREA',
+          '#d97706',
+          '#334155',
+        ],
+      ],
+      'line-width': 2,
+      'line-opacity': ['case', ['==', ['get', 'featureType'], 'ROAD'], 0.68, 0.82],
+    },
+  }))
+
+  ensureLayer(FEATURE_POINT_LAYER_ID, ROUTE_LAYER_ID, () => ({
+    id: FEATURE_POINT_LAYER_ID,
+    type: 'circle',
+    source: FEATURE_SOURCE_ID,
+    filter: ['==', ['get', 'geometryType'], 'POINT'],
+    paint: {
+      'circle-color': [
         'match',
         ['get', 'featureType'],
         'BOUNDARY',
@@ -272,16 +321,24 @@ function renderGeoFeatures() {
         '#0f766e',
         'ENTRANCE_AREA',
         '#d97706',
+        'ROAD',
+        '#86efac',
         '#334155',
       ],
-      'line-width': 2,
-      'line-opacity': 0.9,
+      'circle-radius': 5,
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 2,
+      'circle-opacity': 0.82,
     },
   }))
 }
 
 function renderRoutes() {
-  const featureCollection = buildRouteFeatureCollection(props.mapData?.routes || [])
+  const visibleRouteIdSet = new Set((props.visibleRouteIds || []).map((item) => Number(item)))
+  const routes = visibleRouteIdSet.size
+    ? (props.mapData?.routes || []).filter((route) => visibleRouteIdSet.has(Number(route.id)))
+    : []
+  const featureCollection = buildRouteFeatureCollection(routes)
   updateGeoJsonSource(ROUTE_SOURCE_ID, featureCollection)
 
   ensureLayer(ROUTE_LAYER_ID, SPOT_OUTLINE_LAYER_ID, () => ({
@@ -515,7 +572,7 @@ function initializeMap() {
 }
 
 watch(
-  () => [props.mapData, props.locationPicking, props.pickedLocation, props.pickedLocationLabel],
+  () => [props.mapData, props.locationPicking, props.pickedLocation, props.pickedLocationLabel, props.visibleRouteIds],
   () => {
     renderAllLayers()
   },

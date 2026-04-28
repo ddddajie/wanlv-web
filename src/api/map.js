@@ -60,6 +60,10 @@ export function listRouteGeosApi(routeId) {
   return request.get(`/map/route-geos/route/${routeId}`)
 }
 
+export function generateRouteGeoApi(routeId, data) {
+  return request.post(`/map/routes/${routeId}/geo/generate`, data)
+}
+
 export function createGeoFeatureApi(data) {
   return request.post('/map/geo-features', data)
 }
