@@ -154,14 +154,14 @@ const spotForm = reactive({
   description: '',
   longitude: '',
   latitude: '',
-  stayDurationMinutes: '',
-  openingHours: '',
+  stayDurationMinutes: 60,
+  openingHours: '8:00-16:00',
   coverImageUrl: '',
   audioUrl: '',
   videoUrl: '',
   knowledgeDocId: '',
   recommendedLevel: 0,
-  sortNo: '',
+  sortNo: 1,
   status: 1,
 })
 
@@ -171,7 +171,7 @@ const routeForm = reactive({
   routeName: '',
   routeType: 'official',
   suitableCrowd: '',
-  durationMinutes: '',
+  durationMinutes: 60,
   distanceMeters: '',
   description: '',
   recommendedReason: '',
@@ -196,6 +196,7 @@ const featureForm = reactive({
 const routeGeoForm = reactive({
   id: null,
   routeId: '',
+  scenicAreaId: '',
   geojson: '',
   version: '',
   status: 1,
@@ -293,14 +294,49 @@ const spotIconOptions = [
   { label: '建筑', value: 'BUILDING', icon: House },
   { label: '停车', value: 'PARKING', icon: Van },
 ]
+const spotRecommendedLevelOptions = [
+  { label: '普通', value: 0 },
+  { label: '推荐', value: 1 },
+  { label: '重点推荐', value: 2 },
+]
+const spotSortNoOptions = [1, 2, 3, 4, 5]
+const spotStayDurationOptions = [
+  { label: '无固定时间', value: 0 },
+  { label: '1小时', value: 60 },
+  { label: '2小时', value: 120 },
+  { label: '3小时', value: 180 },
+  { label: '4小时', value: 240 },
+  { label: '5小时', value: 300 },
+]
 const routeTypeOptions = [
   { label: '官方推荐', value: 'official' },
-  { label: '自定义路线', value: 'custom' },
-  { label: '亲子路线', value: 'family' },
+  { label: '历史文化', value: 'history' },
+  { label: '自然风光', value: 'nature' },
+  { label: '亲子', value: 'family' },
   { label: '老人友好', value: 'elder' },
-  { label: '文化深度', value: 'culture' },
-  { label: '拍照打卡', value: 'photo' },
   { label: '轻松游览', value: 'leisure' },
+  { label: '拍照打卡', value: 'photo' },
+]
+const routeSuitableCrowdOptions = [
+  '全部游客',
+  '亲子家庭',
+  '老人',
+  '学生',
+  '摄影爱好者',
+  '历史文化爱好者',
+  '户外徒步人群',
+]
+const routeDurationOptions = [
+  { label: '1小时', value: 60 },
+  { label: '2小时', value: 120 },
+  { label: '3小时', value: 180 },
+  { label: '4小时', value: 240 },
+  { label: '5小时', value: 300 },
+  { label: '6小时', value: 360 },
+  { label: '7小时', value: 420 },
+  { label: '8小时', value: 480 },
+  { label: '9小时', value: 540 },
+  { label: '10小时', value: 600 },
 ]
 const featureTypeOptions = [
   { label: '景区边界', value: 'BOUNDARY' },
@@ -479,14 +515,14 @@ function resetSpotForm() {
     description: '',
     longitude: '',
     latitude: '',
-    stayDurationMinutes: '',
-    openingHours: '',
+    stayDurationMinutes: 60,
+    openingHours: '8:00-16:00',
     coverImageUrl: '',
     audioUrl: '',
     videoUrl: '',
     knowledgeDocId: '',
     recommendedLevel: 0,
-    sortNo: '',
+    sortNo: 1,
     status: 1,
   })
 }
@@ -498,7 +534,7 @@ function resetRouteForm() {
     routeName: '',
     routeType: 'official',
     suitableCrowd: '',
-    durationMinutes: '',
+    durationMinutes: 60,
     distanceMeters: '',
     description: '',
     recommendedReason: '',
@@ -527,6 +563,7 @@ function resetRouteGeoForm() {
   Object.assign(routeGeoForm, {
     id: null,
     routeId: routeGeoRoute.value?.id || '',
+    scenicAreaId: routeGeoRoute.value?.scenicAreaId || selectedScenicId.value || '',
     geojson: '',
     version: '',
     status: 1,
@@ -755,7 +792,13 @@ function openSpotCreate() {
 function openSpotEdit(row) {
   modes.spot = 'edit'
   resetSpotForm()
-  Object.assign(spotForm, row, { iconType: row.iconType || 'TRAFFIC' })
+  Object.assign(spotForm, row, {
+    iconType: row.iconType || 'TRAFFIC',
+    recommendedLevel: toNullableNumber(row.recommendedLevel) ?? 0,
+    stayDurationMinutes: toNullableNumber(row.stayDurationMinutes) ?? 60,
+    sortNo: toNullableNumber(row.sortNo) ?? 1,
+    openingHours: row.openingHours || '8:00-16:00',
+  })
   spotMapKey.value += 1
   dialogs.spot = true
 }
@@ -788,6 +831,9 @@ async function openRouteEdit(row) {
   resetRouteForm()
   const detail = await getRouteDetailApi(row.id)
   Object.assign(routeForm, detail.route, {
+    routeType: detail.route?.routeType || 'official',
+    durationMinutes: toNullableNumber(detail.route?.durationMinutes) ?? 60,
+    distanceMeters: toNullableNumber(detail.route?.distanceMeters) ?? '',
     routeSpots: (detail.spots || []).map((item) => createRouteSpotRow(item)),
   })
   dialogs.route = true
@@ -865,6 +911,7 @@ async function generateRouteGeo() {
     }
 
     routeGeoForm.routeId = routeId
+    routeGeoForm.scenicAreaId = routeGeoRoute.value?.scenicAreaId || selectedScenicId.value || routeGeoForm.scenicAreaId
     routeGeoForm.geojson = stringifyJson(generatedGeojson)
     if (result?.version !== undefined && result?.version !== null) {
       routeGeoForm.version = result.version
@@ -1034,7 +1081,7 @@ async function submitRouteGeo() {
   if (!valid) return
   submitting.routeGeo = true
   try {
-    const payload = cleanPayload({ ...routeGeoForm }, ['id', 'routeId', 'version', 'status'])
+    const payload = cleanPayload({ ...routeGeoForm }, ['id', 'routeId', 'scenicAreaId', 'version', 'status'])
     if (modes.routeGeo === 'create') {
       await createRouteGeoApi(payload)
       ElMessage.success('轨迹版本已新增')
@@ -1399,9 +1446,23 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item label="景点编码"><el-input v-model="spotForm.spotCode" /></el-form-item>
-          <el-form-item label="推荐等级"><el-input v-model="spotForm.recommendedLevel" /></el-form-item>
-          <el-form-item label="停留时长"><el-input v-model="spotForm.stayDurationMinutes" /></el-form-item>
-          <el-form-item label="排序号"><el-input v-model="spotForm.sortNo" /></el-form-item>
+          <el-form-item label="推荐等级">
+            <el-select v-model="spotForm.recommendedLevel">
+              <el-option v-for="item in spotRecommendedLevelOptions" :key="item.value" :label="item.label"
+                :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="停留时长">
+            <el-select v-model="spotForm.stayDurationMinutes">
+              <el-option v-for="item in spotStayDurationOptions" :key="item.value" :label="item.label"
+                :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="排序号">
+            <el-select v-model="spotForm.sortNo">
+              <el-option v-for="item in spotSortNoOptions" :key="item" :label="`${item}`" :value="item" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="开放时间"><el-input v-model="spotForm.openingHours" /></el-form-item>
           <el-form-item label="状态"><el-switch v-model="spotForm.status" :active-value="1"
               :inactive-value="0" /></el-form-item>
@@ -1427,10 +1488,24 @@ onMounted(async () => {
                 v-for="item in scenicOptions" :key="item.id" :label="item.scenicName"
                 :value="item.id" /></el-select></el-form-item>
           <el-form-item label="路线名称" prop="routeName"><el-input v-model="routeForm.routeName" /></el-form-item>
-          <el-form-item label="路线类型"><el-input v-model="routeForm.routeType" /></el-form-item>
-          <el-form-item label="适合人群"><el-input v-model="routeForm.suitableCrowd" /></el-form-item>
-          <el-form-item label="时长(分钟)"><el-input v-model="routeForm.durationMinutes" /></el-form-item>
-          <el-form-item label="距离(米)"><el-input v-model="routeForm.distanceMeters" /></el-form-item>
+          <el-form-item label="路线类型">
+            <el-select v-model="routeForm.routeType">
+              <el-option v-for="item in routeTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="适合人群">
+            <el-select v-model="routeForm.suitableCrowd" allow-create filterable clearable>
+              <el-option v-for="item in routeSuitableCrowdOptions" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="时长">
+            <el-select v-model="routeForm.durationMinutes">
+              <el-option v-for="item in routeDurationOptions" :key="item.value" :label="item.label"
+                :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="距离(米)"><el-input-number v-model="routeForm.distanceMeters" :min="0"
+              controls-position="right" /></el-form-item>
           <el-form-item label="状态"><el-switch v-model="routeForm.status" :active-value="1"
               :inactive-value="0" /></el-form-item>
           <el-form-item label="路线描述" class="span-2"><el-input v-model="routeForm.description" type="textarea"
@@ -1537,6 +1612,7 @@ onMounted(async () => {
             </div>
             <el-form ref="routeGeoRef" :model="routeGeoForm" :rules="routeGeoRules" label-position="top">
               <el-form-item label="路线 ID" prop="routeId"><el-input v-model="routeGeoForm.routeId" /></el-form-item>
+              <el-form-item label="所属景区 ID"><el-input v-model="routeGeoForm.scenicAreaId" /></el-form-item>
               <el-form-item label="版本号"><el-input v-model="routeGeoForm.version" /></el-form-item>
               <el-form-item label="状态"><el-switch v-model="routeGeoForm.status" :active-value="1"
                   :inactive-value="0" /></el-form-item>

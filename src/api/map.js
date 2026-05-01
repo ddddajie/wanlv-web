@@ -48,10 +48,26 @@ export function getRouteDetailApi(id) {
   return request.get(`/map/routes/${id}`)
 }
 
+/**
+ * @typedef {Object} RouteGeoPayload
+ * @property {number=} id
+ * @property {number=} routeId
+ * @property {number=} scenicAreaId
+ * @property {string=} geojson
+ * @property {number=} version
+ * @property {number=} status
+ */
+
+/**
+ * @param {RouteGeoPayload} data
+ */
 export function createRouteGeoApi(data) {
   return request.post('/map/route-geos', data)
 }
 
+/**
+ * @param {RouteGeoPayload} data
+ */
 export function updateRouteGeoApi(data) {
   return request.put('/map/route-geos', data)
 }

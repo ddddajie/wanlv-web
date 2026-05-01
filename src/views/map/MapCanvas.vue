@@ -83,6 +83,7 @@ const containerRef = ref(null)
 let mapInstance = null
 let resizeObserver = null
 let spotMarkers = []
+let geolocateControl = null
 
 function resolveBeforeLayerId(beforeId) {
   return beforeId && mapInstance.getLayer(beforeId) ? beforeId : undefined
@@ -561,6 +562,20 @@ function initializeMap() {
   })
 
   mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+  geolocateControl = new maplibregl.GeolocateControl({
+    positionOptions: {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    },
+    fitBoundsOptions: {
+      maxZoom: 17,
+    },
+    trackUserLocation: true,
+    showUserLocation: true,
+    showAccuracyCircle: true,
+  })
+  mapInstance.addControl(geolocateControl, 'top-right')
   mapInstance.on('load', renderAllLayers)
   mapInstance.on('click', handleMapClick)
   mapInstance.on('mousemove', handlePointerMove)
@@ -588,6 +603,7 @@ onBeforeUnmount(() => {
   cleanupSpotMarkers()
   mapInstance?.remove()
   mapInstance = null
+  geolocateControl = null
 })
 </script>
 

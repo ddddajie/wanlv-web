@@ -1,11 +1,12 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { updateAdminUserApi, updateNormalUserApi } from '@/api/user'
+import { pageScenicAreasApi } from '@/api/map'
+import { getAdminUserApi, getNormalUserApi, updateAdminUserApi, updateNormalUserApi } from '@/api/user'
 import { pinia, useUserStore } from '@/stores'
 import {
   buildDisplayName,
-  formatDateTime,
+  normalizePageResult,
   parseInterestTags,
   stringifyInterestTags,
 } from './userViewUtils'
@@ -13,10 +14,27 @@ import {
 const userStore = useUserStore(pinia)
 const formRef = ref()
 const loading = ref(false)
+const profileLoading = ref(false)
+const scenicLoading = ref(false)
+const scenicOptions = ref([])
 
 const isAdminUser = computed(() => userStore.isAdmin)
 const userInfo = computed(() => userStore.userInfo || {})
-const displayName = computed(() => buildDisplayName(userInfo.value))
+const scenicSelectOptions = computed(() => {
+  const options = scenicOptions.value.map((item) => ({
+    label: item.scenicName,
+    value: item.scenicName,
+  }))
+
+  if (form.scenicSpot && !options.some((item) => item.value === form.scenicSpot)) {
+    options.unshift({
+      label: form.scenicSpot,
+      value: form.scenicSpot,
+    })
+  }
+
+  return options
+})
 
 const form = reactive({
   id: '',
@@ -83,6 +101,51 @@ function syncForm(source) {
 
 function optionalText(value) {
   return typeof value === 'string' ? value.trim() || undefined : undefined
+}
+
+async function fetchCurrentUserDetail() {
+  if (!userStore.userId) return
+
+  profileLoading.value = true
+  try {
+    const detail = isAdminUser.value
+      ? await getAdminUserApi(Number(userStore.userId))
+      : await getNormalUserApi(Number(userStore.userId))
+
+    userStore.patchUserInfo({
+      ...detail,
+      displayName: buildDisplayName(detail),
+    })
+    syncForm({
+      ...userStore.userInfo,
+      ...detail,
+    })
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+async function fetchAllScenicAreas() {
+  if (!isAdminUser.value) return
+
+  scenicLoading.value = true
+  try {
+    const pageSize = 200
+    let pageNum = 1
+    const records = []
+    let total = 0
+
+    do {
+      const page = normalizePageResult(await pageScenicAreasApi({ pageNum, pageSize }))
+      records.push(...page.records)
+      total = page.total
+      pageNum += 1
+    } while (records.length < total)
+
+    scenicOptions.value = records
+  } finally {
+    scenicLoading.value = false
+  }
 }
 
 function buildPayload() {
@@ -152,36 +215,16 @@ watch(
   },
   { immediate: true, deep: true },
 )
+
+onMounted(() => {
+  fetchCurrentUserDetail()
+  fetchAllScenicAreas()
+})
 </script>
 
 <template>
   <div class="user-page">
-    <section class="user-page__hero glass-card">
-      <div>
-        <p class="user-page__eyebrow">Profile Center</p>
-        <h2 class="user-page__title">修改信息</h2>
-        <p class="user-page__desc">
-          当前表单会根据登录身份自动切换管理员或普通用户更新接口，保存成功后左侧头像、昵称和账号信息会立即同步。
-        </p>
-      </div>
-
-      <div class="user-page__summary">
-        <div class="user-page__summary-item">
-          <span>当前用户</span>
-          <strong>{{ displayName || userStore.username || '-' }}</strong>
-        </div>
-        <div class="user-page__summary-item">
-          <span>账号类型</span>
-          <strong>{{ isAdminUser ? '管理员' : '普通用户' }}</strong>
-        </div>
-        <div class="user-page__summary-item">
-          <span>最近登录</span>
-          <strong>{{ formatDateTime(userInfo.lastLoginTime) }}</strong>
-        </div>
-      </div>
-    </section>
-
-    <el-card shadow="never" class="user-page__card">
+    <el-card shadow="never" class="user-page__card" v-loading="profileLoading">
       <template #header>
         <div class="user-page__card-head">
           <span>{{ isAdminUser ? '管理员资料' : '普通用户资料' }}</span>
@@ -191,31 +234,15 @@ watch(
         </div>
       </template>
 
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="rules"
-        label-position="top"
-        @submit.prevent="handleSubmit"
-      >
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="handleSubmit">
         <div class="user-page__grid">
-          <el-form-item label="用户 ID">
-            <el-input :model-value="String(form.id || '')" disabled size="large" />
-          </el-form-item>
-
           <el-form-item label="账号" prop="username">
-            <el-input v-model.trim="form.username" size="large" clearable />
+            <el-input v-model.trim="form.username" size="large" disabled />
           </el-form-item>
 
           <el-form-item label="新密码">
-            <el-input
-              v-model="form.password"
-              type="password"
-              show-password
-              size="large"
-              placeholder="不修改可留空"
-              clearable
-            />
+            <el-input v-model="form.password" type="password" show-password size="large" placeholder="不修改可留空"
+              clearable />
           </el-form-item>
 
           <el-form-item v-if="isAdminUser" label="真实姓名">
@@ -235,7 +262,11 @@ watch(
           </el-form-item>
 
           <el-form-item v-if="isAdminUser" label="所属景区">
-            <el-input v-model.trim="form.scenicSpot" size="large" clearable />
+            <el-select v-model="form.scenicSpot" size="large" placeholder="请选择所属景区" filterable clearable
+              :loading="scenicLoading">
+              <el-option v-for="item in scenicSelectOptions" :key="item.value" :label="item.label"
+                :value="item.value" />
+            </el-select>
           </el-form-item>
 
           <el-form-item v-else label="性别">
@@ -250,12 +281,7 @@ watch(
           </el-form-item>
 
           <el-form-item label="头像地址" class="user-page__full">
-            <el-input
-              v-model.trim="form.avatarUrl"
-              size="large"
-              placeholder="https://example.com/avatar.png"
-              clearable
-            />
+            <el-input v-model.trim="form.avatarUrl" size="large" placeholder="头像地址暂不支持修改" disabled />
           </el-form-item>
 
           <el-form-item v-if="isAdminUser" label="备注" class="user-page__full">
@@ -263,12 +289,7 @@ watch(
           </el-form-item>
 
           <el-form-item v-else label="兴趣标签" class="user-page__full">
-            <el-input
-              v-model="form.interestTagsInput"
-              type="textarea"
-              :rows="4"
-              placeholder="多个标签请用中文逗号或英文逗号分隔"
-            />
+            <el-input v-model="form.interestTagsInput" type="textarea" :rows="4" placeholder="多个标签请用中文逗号或英文逗号分隔" />
           </el-form-item>
         </div>
 
@@ -385,6 +406,7 @@ watch(
 }
 
 @media (max-width: 1080px) {
+
   .user-page__hero,
   .user-page__grid {
     grid-template-columns: 1fr;

@@ -41,6 +41,7 @@ const pointCount = ref(0)
 let mapInstance = null
 let resizeObserver = null
 let drawCoordinates = []
+let geolocateControl = null
 
 function currentDraftMatchesProps() {
   const currentDraft = buildScenicDraftFromCoordinates(drawCoordinates)
@@ -287,6 +288,20 @@ function initializeMap() {
   })
 
   mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+  geolocateControl = new maplibregl.GeolocateControl({
+    positionOptions: {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    },
+    fitBoundsOptions: {
+      maxZoom: 17,
+    },
+    trackUserLocation: true,
+    showUserLocation: true,
+    showAccuracyCircle: true,
+  })
+  mapInstance.addControl(geolocateControl, 'top-right')
   mapInstance.on('load', () => {
     addDrawLayers()
     hydrateFromProps()
@@ -320,6 +335,7 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   mapInstance?.remove()
   mapInstance = null
+  geolocateControl = null
 })
 </script>
 

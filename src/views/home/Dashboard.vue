@@ -567,9 +567,34 @@ onBeforeUnmount(() => {
 .dashboard-menu {
   flex: 1;
   min-height: 0;
+  padding-right: 6px;
   border-right: 0;
   background: transparent;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(226, 232, 240, 0.58) rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-menu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dashboard-menu::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-menu::-webkit-scrollbar-thumb {
+  min-height: 56px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.82), rgba(148, 163, 184, 0.62)) border-box;
+  background-clip: padding-box;
+}
+
+.dashboard-menu::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(203, 213, 225, 0.78)) border-box;
+  background-clip: padding-box;
 }
 
 .dashboard-menu :deep(.el-menu-item),

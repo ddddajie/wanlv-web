@@ -96,6 +96,70 @@ const addMessage = (type, content) => {
   messages.value.push({ id: `${Date.now()}-${messages.value.length}`, type, content })
 }
 
+const escapeHtml = (value = '') => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+const renderInlineMarkdown = (text = '') => text
+  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  .replace(/`([^`]+)`/g, '<code>$1</code>')
+
+const renderMarkdown = (value = '') => {
+  const lines = escapeHtml(value).replace(/\r\n?/g, '\n').split('\n')
+  const html = []
+  let listItems = []
+
+  const flushList = () => {
+    if (!listItems.length) return
+    html.push(`<ul>${listItems.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join('')}</ul>`)
+    listItems = []
+  }
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim()
+    if (!line) {
+      flushList()
+      return
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/)
+    if (heading) {
+      flushList()
+      const level = Math.min(heading[1].length, 4)
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`)
+      return
+    }
+
+    if (/^---+$/.test(line)) {
+      flushList()
+      html.push('<hr>')
+      return
+    }
+
+    const list = line.match(/^[-*]\s+(.+)$/)
+    if (list) {
+      listItems.push(list[1])
+      return
+    }
+
+    const quote = line.match(/^>\s?(.+)$/)
+    if (quote) {
+      flushList()
+      html.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`)
+      return
+    }
+
+    flushList()
+    html.push(`<p>${renderInlineMarkdown(line)}</p>`)
+  })
+
+  flushList()
+  return html.join('')
+}
+
 const sanitizeReplyText = (text) => text.replace(/\*\*|\*|#|\[|\]|\(|\)/g, '').replace(/\s+\n/g, '\n').trim()
 
 const syncChatState = (payload = {}) => {
@@ -294,20 +358,6 @@ const sendChatMessage = async ({ presetText = '', messageType = 'text' } = {}) =
   }
 }
 
-const handleGenerateSummary = () => {
-  if (!canAccessSummaryDashboard.value) {
-    ElMessage.warning('聊天日报仅超级管理员可用，请联系超级管理员在控制台执行')
-    return
-  }
-
-  if (props.embedded) {
-    emit('navigate', 'daily-report')
-    return
-  }
-
-  router.push('/dashboard')
-}
-
 const handleConfirmScenicArea = async () => {
   if (!canBindDetectedScenic.value || bindLoading.value) return
   bindLoading.value = true
@@ -345,7 +395,7 @@ const handleVoiceRecordStart = async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     mediaRecorder.value = new MediaRecorder(stream)
-    mediaRecorder.value.ondataavailable = () => {}
+    mediaRecorder.value.ondataavailable = () => { }
     mediaRecorder.value.start()
     isVoiceRecording.value = true
     recognition.value?.start()
@@ -418,9 +468,7 @@ onUnmounted(() => {
   <div class="page" :class="{ 'page--embedded': embedded }">
     <section class="hero">
       <div>
-        <span class="kicker">Wanlv AI Guide</span>
-        <h1>数字人智能问答</h1>
-        <p>聊天直连后端 `/agent/chat`，景区确认对接 `/agent/session/scenic-area/bind`，聊天日报已迁移到超级管理员控制台统一执行。</p>
+        <span class="kicker">智能客服</span>
       </div>
       <div class="chips">
         <el-tag :type="statusType" effect="dark" round>{{ statusText }}</el-tag>
@@ -451,82 +499,70 @@ onUnmounted(() => {
         </div>
 
         <div class="composer">
-          <el-input v-model="userInput" size="large" clearable :disabled="loading" placeholder="请输入你想咨询的问题..." @keydown.enter.prevent="sendChatMessage()" />
+          <el-input v-model="userInput" size="large" clearable :disabled="loading" placeholder="请输入你想咨询的问题..."
+            @keydown.enter.prevent="sendChatMessage()" />
           <el-button type="primary" size="large" :loading="loading" @click="sendChatMessage()">发送提问</el-button>
-          <button type="button" class="voice" :class="{ recording: isVoiceRecording }" @mousedown="handleVoiceRecordStart" @mouseup="handleVoiceRecordStop" @mouseleave="handleVoiceRecordStop" @touchstart.prevent="handleVoiceRecordStart" @touchend="handleVoiceRecordStop">
+          <button type="button" class="voice" :class="{ recording: isVoiceRecording }"
+            @mousedown="handleVoiceRecordStart" @mouseup="handleVoiceRecordStop" @mouseleave="handleVoiceRecordStop"
+            @touchstart.prevent="handleVoiceRecordStart" @touchend="handleVoiceRecordStop">
             {{ isVoiceRecording ? '松开发送' : '按住说话' }}
           </button>
-          <el-button v-if="connectionStatus !== 'connected'" plain type="success" :loading="connectionStatus === 'connecting'" @click="connectionStatus = 'connecting'; start()">{{ connectionStatus === 'connecting' ? '连接中...' : '连接数字人' }}</el-button>
+          <el-button v-if="connectionStatus !== 'connected'" plain type="success"
+            :loading="connectionStatus === 'connecting'" @click="connectionStatus = 'connecting'; start()">{{
+              connectionStatus === 'connecting' ? '连接中...' : '连接数字人' }}</el-button>
           <el-button v-else plain type="danger" @click="stop()">断开连接</el-button>
-          <el-button plain type="primary" @click="handleGenerateSummary()">
-            {{ canAccessSummaryDashboard ? '前往日报控制台' : '日报权限说明' }}
-          </el-button>
         </div>
       </div>
 
       <div class="right">
         <div class="panel">
-          <div class="panel-head"><h2>聊天记录</h2><el-tag type="info" round>{{ messages.length }} 条</el-tag></div>
+          <div class="panel-head">
+            <h2>聊天记录</h2><el-tag type="info" round>{{ messages.length }} 条</el-tag>
+          </div>
           <div ref="chatArea" class="stream">
             <el-empty v-if="!messages.length && !loading" description="开始发送第一条消息吧" :image-size="110" />
             <div v-for="message in messages" :key="message.id" class="message" :class="message.type">
               <div class="avatar">{{ message.type === 'agent' ? 'AI' : message.type === 'system' ? 'SYS' : '我' }}</div>
               <div class="msg-body">
-                <div class="role">{{ message.type === 'agent' ? '智能回复' : message.type === 'system' ? '系统提示' : message.type === 'voice' ? '语音提问' : '我的提问' }}</div>
-                <p>{{ message.content }}</p>
+                <div class="role">{{ message.type === 'agent' ? '智能回复' : message.type === 'system' ? '系统提示' :
+                  message.type === 'voice' ? '语音提问' : '我的提问' }}</div>
+                <div v-if="message.type === 'agent'" class="markdown-body" v-html="renderMarkdown(message.content)">
+                </div>
+                <p v-else>{{ message.content }}</p>
               </div>
             </div>
             <div v-if="loading" class="message agent">
               <div class="avatar">AI</div>
-              <div class="msg-body"><div class="role">智能回复</div><p>后端处理中...</p></div>
+              <div class="msg-body">
+                <div class="role">智能回复</div>
+                <p>后端处理中...</p>
+              </div>
             </div>
           </div>
         </div>
 
         <div class="panel">
-          <div class="panel-head"><h2>景区确认</h2></div>
+          <div class="panel-head">
+            <h2>景区确认</h2>
+          </div>
           <div class="state-grid">
             <div class="card"><span>景区绑定</span><strong>{{ scenicAreaLabel }}</strong></div>
-            <div class="card"><span>已确认</span><strong>{{ chatState.scenicAreaConfirmed === 1 ? '是' : '否' }}</strong></div>
+            <div class="card"><span>已确认</span><strong>{{ chatState.scenicAreaConfirmed === 1 ? '是' : '否' }}</strong>
+            </div>
             <div class="card"><span>识别置信度</span><strong>{{ scenicConfidenceText }}</strong></div>
             <div class="card"><span>报告日期</span><strong>{{ chatState.reportDate || '--' }}</strong></div>
           </div>
           <div v-if="hasScenicPrompt" class="prompt">
-            <strong>{{ chatState.detectedScenicAreaName ? `你是在咨询“${chatState.detectedScenicAreaName}”吗？` : '系统建议你确认当前咨询景区。' }}</strong>
+            <strong>{{ chatState.detectedScenicAreaName ? `你是在咨询“${chatState.detectedScenicAreaName}”吗？` :
+              '系统建议你确认当前咨询景区。' }}</strong>
             <p>{{ canBindDetectedScenic ? '确认后会调用绑定接口，把当天会话切换为景区服务模式。' : '当前只有景区名称提示，还没有可直接绑定的景区 ID。' }}</p>
             <div class="actions">
-              <el-button type="primary" :disabled="!canBindDetectedScenic" :loading="bindLoading" @click="handleConfirmScenicArea()">确认就是这个景区</el-button>
+              <el-button type="primary" :disabled="!canBindDetectedScenic" :loading="bindLoading"
+                @click="handleConfirmScenicArea()">确认就是这个景区</el-button>
               <el-button plain @click="handleDismissScenicPrompt()">暂不确认</el-button>
             </div>
           </div>
           <el-empty v-else description="当前还没有绑定景区，系统会在需要时提示你确认。" :image-size="92" />
-        </div>
-
-        <div class="panel">
-          <div class="panel-head"><h2>今日总结</h2></div>
-          <template v-if="canAccessSummaryDashboard">
-            <div class="summary-box">
-              <div><span>入口位置</span><strong>/dashboard</strong></div>
-              <div><span>权限要求</span><strong>super_admin</strong></div>
-            </div>
-            <div class="summary-block">
-              <span>为什么改到控制台</span>
-              <p>新的日报接口要求显式提交 operatorUsername 和 operatorPassword，因此改为在管理员控制台统一发起，支持单用户日报和按日期批量日报两种模式。</p>
-            </div>
-            <div class="summary-block">
-              <span>建议流程</span>
-              <div class="tags">
-                <em>先完成聊天联调</em>
-                <em>再进入控制台生成日报</em>
-                <em>需要时开启 forceReanalyze</em>
-              </div>
-            </div>
-          </template>
-          <el-empty
-            v-else
-            description="聊天日报仅超级管理员可用，普通账号请继续在本页联调聊天；需要日报时请联系超级管理员前往控制台处理。"
-            :image-size="100"
-          />
         </div>
       </div>
     </section>
@@ -534,5 +570,492 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.page{min-height:100vh;padding:24px;background:linear-gradient(180deg,#edf4ff,#dfeaf8)}.page--embedded{min-height:auto;padding:0;background:transparent}.hero,.panel,.composer,.card{background:rgba(255,255,255,.88);box-shadow:0 18px 40px rgba(15,23,42,.08)}.hero{display:flex;justify-content:space-between;gap:20px;padding:24px;border-radius:28px}.kicker{display:inline-flex;padding:6px 12px;border-radius:999px;background:rgba(37,99,235,.08);color:#2563eb;font-size:12px;font-weight:700;text-transform:uppercase}.hero h1{margin:12px 0 8px;font-size:clamp(30px,4vw,44px);color:#0f172a}.hero p{margin:0;max-width:760px;color:#475569;line-height:1.8}.chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;align-content:flex-start}.chip{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:999px;background:#fff;color:#334155}.grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,.95fr);gap:20px;margin-top:20px}.left,.right{display:flex;flex-direction:column;gap:20px}.stage{position:relative;min-height:62vh;border-radius:32px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#06111f,#101d2e);box-shadow:0 28px 60px rgba(15,23,42,.22)}#digital-human-video{width:min(760px,78vw);max-height:88%;object-fit:contain}.placeholder{position:absolute;inset:auto 24px 24px;z-index:2;padding:14px 16px;border-radius:18px;background:rgba(8,15,28,.54);color:#fff;line-height:1.7}.bubble{position:absolute;top:24px;left:24px;z-index:3;width:min(420px,calc(100% - 48px));padding:18px;border-radius:24px;background:rgba(255,255,255,.96);box-shadow:0 20px 44px rgba(15,23,42,.18)}.bubble-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px;color:#1d4ed8;font-size:13px;font-weight:700}.bubble p,.msg-body p,.summary-block p{margin:0;white-space:pre-wrap;word-break:break-word;line-height:1.8}.stats,.state-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card{padding:16px 18px;border-radius:22px}.card span,.summary-block span,.summary-box span{display:block;color:#64748b;font-size:13px}.card strong,.summary-box strong{display:block;margin-top:8px;color:#0f172a;font-size:16px;line-height:1.6;word-break:break-word}.composer{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto auto;gap:12px;padding:18px;border-radius:28px}.composer :deep(.el-input__wrapper){min-height:56px;border-radius:18px}.composer :deep(.el-button){min-height:56px;border-radius:18px}.voice{min-width:128px;min-height:56px;border:0;border-radius:18px;background:linear-gradient(135deg,#0f172a,#1e3a8a);color:#fff;font-weight:700;cursor:pointer}.voice.recording{background:linear-gradient(135deg,#ef4444,#dc2626)}.panel{padding:18px;border-radius:28px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.panel-head h2{margin:0;font-size:22px;color:#10233e}.stream{display:flex;flex-direction:column;gap:14px;min-height:300px;max-height:420px;overflow-y:auto}.message{display:flex;gap:12px;align-items:flex-start}.message.user,.message.voice{flex-direction:row-reverse}.avatar{width:42px;height:42px;flex:0 0 42px;display:inline-flex;align-items:center;justify-content:center;border-radius:14px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1d4ed8;font-size:12px;font-weight:700}.message.agent .avatar{background:linear-gradient(135deg,#dcfce7,#bbf7d0);color:#15803d}.message.system .avatar{background:linear-gradient(135deg,#e2e8f0,#cbd5e1);color:#334155}.msg-body{max-width:min(84%,520px);padding:14px 16px;border-radius:20px;background:#f8fafc;border:1px solid #e2e8f0}.message.user .msg-body,.message.voice .msg-body{background:linear-gradient(135deg,#409eff,#1d4ed8);border-color:transparent;color:#fff}.role{margin-bottom:8px;color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase}.message.user .role,.message.voice .role{color:rgba(255,255,255,.78)}.prompt{margin-top:16px;padding:16px;border-radius:22px;background:linear-gradient(135deg,rgba(59,130,246,.08),rgba(15,118,110,.08))}.prompt p{margin:8px 0 0;color:#475569;line-height:1.7}.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px}.summary,.summary-box{padding:16px;border-radius:22px;background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(59,130,246,.08))}.summary-box{display:flex;justify-content:space-between;gap:18px}.summary-block{margin-top:16px}.tags{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.tags em{display:inline-flex;align-items:center;min-height:32px;padding:0 12px;border-radius:999px;background:rgba(37,99,235,.08);color:#1d4ed8;font-style:normal}.bubble-fade-enter-active,.bubble-fade-leave-active{transition:opacity .28s ease,transform .28s ease}.bubble-fade-enter-from,.bubble-fade-leave-to{opacity:0;transform:translateY(-12px) scale(.96)}@media (max-width:1180px){.grid{grid-template-columns:1fr}.stage{min-height:52vh}}@media (max-width:900px){.page{padding:16px}.page--embedded{padding:0}.hero{flex-direction:column}.chips{justify-content:flex-start}.stats,.state-grid{grid-template-columns:1fr}.composer{grid-template-columns:1fr}.voice,.composer :deep(.el-button){width:100%}}@media (max-width:640px){.hero h1{font-size:28px}.bubble{top:16px;left:16px;width:min(360px,calc(100% - 32px))}.summary-box{flex-direction:column;align-items:flex-start}}
+.page {
+  min-height: 100vh;
+  padding: 24px;
+  background: linear-gradient(180deg, #edf4ff, #dfeaf8)
+}
+
+.page--embedded {
+  min-height: auto;
+  padding: 0;
+  background: transparent
+}
+
+.hero,
+.panel,
+.composer,
+.card {
+  background: rgba(255, 255, 255, .88);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, .08)
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  border-radius: 28px
+}
+
+.kicker {
+  display: inline-flex;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, .08);
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase
+}
+
+.hero h1 {
+  margin: 12px 0 8px;
+  font-size: clamp(30px, 4vw, 44px);
+  color: #0f172a
+}
+
+.hero p {
+  margin: 0;
+  max-width: 760px;
+  color: #475569;
+  line-height: 1.8
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  align-content: flex-start
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, .95fr);
+  gap: 20px;
+  margin-top: 20px
+}
+
+.left,
+.right {
+  display: flex;
+  flex-direction: column;
+  gap: 20px
+}
+
+.stage {
+  position: relative;
+  min-height: 62vh;
+  border-radius: 32px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #06111f, #101d2e);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, .22)
+}
+
+#digital-human-video {
+  width: min(760px, 78vw);
+  max-height: 88%;
+  object-fit: contain
+}
+
+.placeholder {
+  position: absolute;
+  inset: auto 24px 24px;
+  z-index: 2;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(8, 15, 28, .54);
+  color: #fff;
+  line-height: 1.7
+}
+
+.bubble {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 3;
+  width: min(420px, calc(100% - 48px));
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 20px 44px rgba(15, 23, 42, .18)
+}
+
+.bubble-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 700
+}
+
+.bubble p,
+.msg-body p,
+.summary-block p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.8
+}
+
+.markdown-body {
+  color: inherit;
+  line-height: 1.8;
+  word-break: break-word
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4) {
+  margin: 12px 0 8px;
+  color: #0f172a;
+  font-size: 17px;
+  line-height: 1.5
+}
+
+.markdown-body :deep(h1:first-child),
+.markdown-body :deep(h2:first-child),
+.markdown-body :deep(h3:first-child),
+.markdown-body :deep(h4:first-child),
+.markdown-body :deep(p:first-child) {
+  margin-top: 0
+}
+
+.markdown-body :deep(p) {
+  margin: 8px 0;
+  white-space: normal
+}
+
+.markdown-body :deep(strong) {
+  font-weight: 800
+}
+
+.markdown-body :deep(ul) {
+  margin: 8px 0;
+  padding-left: 20px
+}
+
+.markdown-body :deep(li) {
+  margin: 4px 0
+}
+
+.markdown-body :deep(blockquote) {
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-left: 3px solid #93c5fd;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, .08);
+  color: #334155
+}
+
+.markdown-body :deep(hr) {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid #e2e8f0
+}
+
+.markdown-body :deep(code) {
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .92em
+}
+
+.stats,
+.state-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px
+}
+
+.card {
+  padding: 16px 18px;
+  border-radius: 22px
+}
+
+.card span,
+.summary-block span,
+.summary-box span {
+  display: block;
+  color: #64748b;
+  font-size: 13px
+}
+
+.card strong,
+.summary-box strong {
+  display: block;
+  margin-top: 8px;
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 1.6;
+  word-break: break-word
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 28px
+}
+
+.composer :deep(.el-input__wrapper) {
+  min-height: 56px;
+  border-radius: 18px
+}
+
+.composer :deep(.el-button) {
+  min-height: 56px;
+  border-radius: 18px
+}
+
+.voice {
+  min-width: 128px;
+  min-height: 56px;
+  border: 0;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #0f172a, #1e3a8a);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer
+}
+
+.voice.recording {
+  background: linear-gradient(135deg, #ef4444, #dc2626)
+}
+
+.panel {
+  padding: 18px;
+  border-radius: 28px
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 22px;
+  color: #10233e
+}
+
+.stream {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 300px;
+  max-height: 420px;
+  overflow-y: auto
+}
+
+.message {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start
+}
+
+.message.user,
+.message.voice {
+  flex-direction: row-reverse
+}
+
+.avatar {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700
+}
+
+.message.agent .avatar {
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  color: #15803d
+}
+
+.message.system .avatar {
+  background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+  color: #334155
+}
+
+.msg-body {
+  max-width: min(84%, 520px);
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0
+}
+
+.message.user .msg-body,
+.message.voice .msg-body {
+  background: linear-gradient(135deg, #409eff, #1d4ed8);
+  border-color: transparent;
+  color: #fff
+}
+
+.role {
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase
+}
+
+.message.user .role,
+.message.voice .role {
+  color: rgba(255, 255, 255, .78)
+}
+
+.prompt {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, .08), rgba(15, 118, 110, .08))
+}
+
+.prompt p {
+  margin: 8px 0 0;
+  color: #475569;
+  line-height: 1.7
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px
+}
+
+.summary,
+.summary-box {
+  padding: 16px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, .08), rgba(59, 130, 246, .08))
+}
+
+.summary-box {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px
+}
+
+.summary-block {
+  margin-top: 16px
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px
+}
+
+.tags em {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, .08);
+  color: #1d4ed8;
+  font-style: normal
+}
+
+.bubble-fade-enter-active,
+.bubble-fade-leave-active {
+  transition: opacity .28s ease, transform .28s ease
+}
+
+.bubble-fade-enter-from,
+.bubble-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-12px) scale(.96)
+}
+
+@media (max-width:1180px) {
+  .grid {
+    grid-template-columns: 1fr
+  }
+
+  .stage {
+    min-height: 52vh
+  }
+}
+
+@media (max-width:900px) {
+  .page {
+    padding: 16px
+  }
+
+  .page--embedded {
+    padding: 0
+  }
+
+  .hero {
+    flex-direction: column
+  }
+
+  .chips {
+    justify-content: flex-start
+  }
+
+  .stats,
+  .state-grid {
+    grid-template-columns: 1fr
+  }
+
+  .composer {
+    grid-template-columns: 1fr
+  }
+
+  .voice,
+  .composer :deep(.el-button) {
+    width: 100%
+  }
+}
+
+@media (max-width:640px) {
+  .hero h1 {
+    font-size: 28px
+  }
+
+  .bubble {
+    top: 16px;
+    left: 16px;
+    width: min(360px, calc(100% - 32px))
+  }
+
+  .summary-box {
+    flex-direction: column;
+    align-items: flex-start
+  }
+}
 </style>
