@@ -16,6 +16,10 @@ export function getScenicAreaDetailApi(id) {
   return request.get(`/map/scenic-areas/${id}`)
 }
 
+export function deleteScenicAreaApi(id) {
+  return request.delete(`/map/scenic-areas/${id}`)
+}
+
 export function createSpotApi(data) {
   return request.post('/map/spots', data)
 }
@@ -32,6 +36,10 @@ export function getSpotDetailApi(id) {
   return request.get(`/map/spots/${id}`)
 }
 
+export function deleteSpotApi(id) {
+  return request.delete(`/map/spots/${id}`)
+}
+
 export function createRouteApi(data) {
   return request.post('/map/routes', data)
 }
@@ -46,6 +54,10 @@ export function pageRoutesApi(params) {
 
 export function getRouteDetailApi(id) {
   return request.get(`/map/routes/${id}`)
+}
+
+export function deleteRouteApi(id) {
+  return request.delete(`/map/routes/${id}`)
 }
 
 /**
@@ -86,6 +98,10 @@ export function createGeoFeatureApi(data) {
 
 export function updateGeoFeatureApi(data) {
   return request.put('/map/geo-features', data)
+}
+
+export function deleteGeoFeatureApi(id) {
+  return request.delete(`/map/geo-features/${id}`)
 }
 
 export function listGeoFeaturesApi(scenicAreaId) {

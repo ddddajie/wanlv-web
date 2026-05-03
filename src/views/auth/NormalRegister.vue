@@ -97,25 +97,14 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <AuthShell
-    eyebrow="Create Account"
-    title="普通用户注册"
-    description="注册成功后会直接按照“注册即登录”处理，把后端返回的 UserLoginVO 缓存下来，方便立即进入首页联调。"
-    panel-title="创建你的用户账号"
-    panel-description="必填项只有账号和密码，其他信息会按接口文档作为可选字段提交。"
-    :highlights="[
+  <AuthShell eyebrow="Create Account" title="普通用户注册"
+    description="注册成功后会直接按照“注册即登录”处理，把后端返回的 UserLoginVO 缓存下来，方便立即进入首页联调。" panel-title="创建你的用户账号"
+    panel-description="必填项只有账号和密码，其他信息会按接口文档作为可选字段提交。" :highlights="[
       { title: '表单校验', description: '前端先校验手机号、邮箱和确认密码，减少无效请求。' },
       { title: '兴趣标签', description: '页面使用逗号分隔输入，提交时自动转成后端要求的 JSON 字符串。' },
       { title: '注册即登录', description: '成功后直接缓存当前用户信息并进入控制台。' },
-    ]"
-  >
-    <el-form
-      ref="formRef"
-      :model="form"
-      :rules="rules"
-      label-position="top"
-      @submit.prevent="handleSubmit"
-    >
+    ]">
+    <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="handleSubmit">
       <div class="form-grid">
         <el-form-item label="普通用户账号" prop="username">
           <el-input v-model.trim="form.username" placeholder="请输入账号" size="large" clearable />
@@ -126,23 +115,11 @@ async function handleSubmit() {
         </el-form-item>
 
         <el-form-item label="密码" prop="password">
-          <el-input
-            v-model="form.password"
-            placeholder="请输入密码"
-            size="large"
-            show-password
-            clearable
-          />
+          <el-input v-model="form.password" placeholder="请输入密码" size="large" show-password clearable />
         </el-form-item>
 
         <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input
-            v-model="form.confirmPassword"
-            placeholder="请再次输入密码"
-            size="large"
-            show-password
-            clearable
-          />
+          <el-input v-model="form.confirmPassword" placeholder="请再次输入密码" size="large" show-password clearable />
         </el-form-item>
 
         <el-form-item label="手机号" prop="phone">
@@ -154,12 +131,8 @@ async function handleSubmit() {
         </el-form-item>
 
         <el-form-item label="头像地址">
-          <el-input
-            v-model.trim="form.avatarUrl"
-            placeholder="https://example.com/avatar.png"
-            size="large"
-            clearable
-          />
+          <el-input v-model.trim="form.avatarUrl" placeholder="https://example.com/avatar.png" size="large" clearable
+            disabled="true" />
         </el-form-item>
 
         <el-form-item label="年龄">
@@ -175,22 +148,11 @@ async function handleSubmit() {
         </el-form-item>
 
         <el-form-item label="兴趣标签" class="form-grid__full">
-          <el-input
-            v-model="form.interestTagsText"
-            placeholder="例如：摄影，徒步，美食"
-            type="textarea"
-            :rows="3"
-          />
+          <el-input v-model="form.interestTagsText" placeholder="例如：摄影，徒步，美食" type="textarea" :rows="3" />
         </el-form-item>
       </div>
 
-      <el-button
-        type="primary"
-        size="large"
-        class="auth-action"
-        :loading="loading"
-        @click="handleSubmit"
-      >
+      <el-button type="primary" size="large" class="auth-action" :loading="loading" @click="handleSubmit">
         注册并进入系统
       </el-button>
     </el-form>

@@ -38,7 +38,13 @@ const routes = [
         path: 'chat',
         name: 'Chat',
         component: () => import('@/views/chat/Chat.vue'),
-        meta: { title: '智能问答', requiresAuth: true },
+        meta: { title: '智能问答', requiresAuth: true, normalOnly: true },
+      },
+      {
+        path: 'tourist-map',
+        name: 'TouristMap',
+        component: () => import('@/views/map/TouristMap.vue'),
+        meta: { title: '景区导游地图', requiresAuth: true },
       },
       {
         path: 'admin/create',
@@ -69,6 +75,7 @@ router.beforeEach((to, from, next) => {
   const isPublic = to.matched.some((record) => record.meta?.public)
   const requiresAuth = to.matched.some((record) => record.meta?.requiresAuth)
   const superAdminOnly = to.matched.some((record) => record.meta?.superAdminOnly)
+  const normalOnly = to.matched.some((record) => record.meta?.normalOnly)
   const loginType = to.matched.find((record) => record.meta?.loginType)?.meta?.loginType
 
   if (isPublic) {
@@ -91,6 +98,12 @@ router.beforeEach((to, from, next) => {
 
   if (superAdminOnly && !userStore.isSuperAdmin) {
     ElMessage.error('只有超级管理员才能新增管理员')
+    next('/dashboard')
+    return
+  }
+
+  if (normalOnly && userStore.isAdmin) {
+    ElMessage.error('智能问答仅普通用户可使用')
     next('/dashboard')
     return
   }

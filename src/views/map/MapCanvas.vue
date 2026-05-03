@@ -43,6 +43,14 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  showNativeControls: {
+    type: Boolean,
+    default: true,
+  },
+  compact: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['spot-click', 'route-click', 'location-pick'])
@@ -84,6 +92,29 @@ let mapInstance = null
 let resizeObserver = null
 let spotMarkers = []
 let geolocateControl = null
+let userLocationMarker = null
+
+function cleanupUserLocationMarker() {
+  userLocationMarker?.remove()
+  userLocationMarker = null
+}
+
+function renderUserLocationMarker(longitude, latitude) {
+  if (!mapInstance || !Number.isFinite(longitude) || !Number.isFinite(latitude)) return
+
+  cleanupUserLocationMarker()
+
+  const element = document.createElement('span')
+  element.className = 'user-location-marker'
+  element.title = '我的位置'
+
+  userLocationMarker = new maplibregl.Marker({
+    element,
+    anchor: 'center',
+  })
+    .setLngLat([longitude, latitude])
+    .addTo(mapInstance)
+}
 
 function resolveBeforeLayerId(beforeId) {
   return beforeId && mapInstance.getLayer(beforeId) ? beforeId : undefined
@@ -561,21 +592,26 @@ function initializeMap() {
     localIdeographFontFamily: 'Microsoft YaHei, Noto Sans CJK SC, sans-serif',
   })
 
-  mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-  geolocateControl = new maplibregl.GeolocateControl({
-    positionOptions: {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0,
-    },
-    fitBoundsOptions: {
-      maxZoom: 17,
-    },
-    trackUserLocation: true,
-    showUserLocation: true,
-    showAccuracyCircle: true,
-  })
-  mapInstance.addControl(geolocateControl, 'top-right')
+  if (props.showNativeControls) {
+    mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+    geolocateControl = new maplibregl.GeolocateControl({
+      positionOptions: {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      },
+      fitBoundsOptions: {
+        maxZoom: 17,
+      },
+      trackUserLocation: true,
+      showUserLocation: true,
+      showAccuracyCircle: true,
+    })
+    mapInstance.addControl(geolocateControl, 'top-right')
+    geolocateControl.on('geolocate', (event) => {
+      renderUserLocationMarker(event.coords.longitude, event.coords.latitude)
+    })
+  }
   mapInstance.on('load', renderAllLayers)
   mapInstance.on('click', handleMapClick)
   mapInstance.on('mousemove', handlePointerMove)
@@ -601,14 +637,46 @@ onMounted(() => {
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   cleanupSpotMarkers()
+  cleanupUserLocationMarker()
   mapInstance?.remove()
   mapInstance = null
   geolocateControl = null
 })
+
+defineExpose({
+  zoomIn() {
+    mapInstance?.zoomIn()
+  },
+  zoomOut() {
+    mapInstance?.zoomOut()
+  },
+  fitView() {
+    if (!mapInstance) return
+    fitMapView()
+  },
+  locate() {
+    if (geolocateControl) {
+      geolocateControl.trigger()
+      return
+    }
+
+    if (!mapInstance || typeof navigator === 'undefined' || !navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition((position) => {
+      renderUserLocationMarker(position.coords.longitude, position.coords.latitude)
+      mapInstance?.flyTo({
+        center: [position.coords.longitude, position.coords.latitude],
+        zoom: Math.max(mapInstance.getZoom(), 16),
+      })
+    })
+  },
+  resize() {
+    mapInstance?.resize()
+  },
+})
 </script>
 
 <template>
-  <div ref="containerRef" class="map-canvas"></div>
+  <div ref="containerRef" class="map-canvas" :class="{ 'map-canvas--compact': compact }"></div>
 </template>
 
 <style scoped>
@@ -618,6 +686,11 @@ onBeforeUnmount(() => {
   min-height: 420px;
   border-radius: 28px;
   overflow: hidden;
+}
+
+.map-canvas--compact {
+  min-height: 0;
+  border-radius: 0;
 }
 
 :deep(.spot-marker) {
@@ -670,5 +743,17 @@ onBeforeUnmount(() => {
 
 :deep(.spot-marker--draft .spot-marker__label) {
   color: #dc2626;
+}
+
+:deep(.user-location-marker) {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #ffffff;
+  border-radius: 999px;
+  background: #2563eb;
+  box-shadow:
+    0 0 0 8px rgba(37, 99, 235, 0.18),
+    0 8px 18px rgba(15, 23, 42, 0.24);
 }
 </style>

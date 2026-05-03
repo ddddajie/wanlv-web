@@ -1,7 +1,8 @@
 import axios from 'axios'
 import request from '@/utils/request'
 
-const DIGITAL_HUMAN_API_URL = 'http://localhost:8010'
+const DIGITAL_HUMAN_API_URL =
+  import.meta.env.VITE_DIGITAL_HUMAN_API_URL || 'http://localhost:8010'
 
 export const agentChatApi = (data) => request.post('/agent/chat', data)
 

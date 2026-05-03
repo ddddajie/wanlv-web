@@ -32,8 +32,16 @@ export function getAdminUserApi(id) {
   return request.get(`/user/admin/${id}`)
 }
 
+export function deleteAdminUserApi(id) {
+  return request.delete(`/user/admin/${id}`)
+}
+
 export function getNormalUserApi(id) {
   return request.get(`/user/normal/${id}`)
+}
+
+export function deleteNormalUserApi(id) {
+  return request.delete(`/user/normal/${id}`)
 }
 
 export function pageAdminUsersApi(params) {

@@ -69,13 +69,8 @@ function handleNavigate(action) {
       </div>
 
       <div class="overview-hero__side">
-        <el-alert
-          :title="heroAlert.title"
-          :description="heroAlert.description"
-          :type="heroAlert.type"
-          :closable="false"
-          show-icon
-        />
+        <el-alert :title="heroAlert.title" :description="heroAlert.description" :type="heroAlert.type" :closable="false"
+          show-icon />
 
         <div class="overview-hero__tags">
           <el-tag effect="dark" type="primary">{{ roleLabel }}</el-tag>
@@ -106,29 +101,6 @@ function handleNavigate(action) {
       <el-card shadow="never" class="panel-card">
         <template #header>
           <div class="panel-card__header">
-            <span>快捷入口</span>
-            <span class="panel-card__hint">点击直接跳转</span>
-          </div>
-        </template>
-
-        <div class="action-list">
-          <button
-            v-for="item in actionCards"
-            :key="item.title"
-            type="button"
-            class="action-card"
-            @click="handleNavigate(item.actionKey || item.path)"
-          >
-            <span class="action-card__title">{{ item.title }}</span>
-            <span class="action-card__desc">{{ item.description }}</span>
-            <span class="action-card__link">{{ item.actionText }}</span>
-          </button>
-        </div>
-      </el-card>
-
-      <el-card shadow="never" class="panel-card">
-        <template #header>
-          <div class="panel-card__header">
             <span>当前可用能力</span>
           </div>
         </template>
@@ -136,18 +108,6 @@ function handleNavigate(action) {
         <ul class="capability-list">
           <li v-for="item in capabilityList" :key="item">{{ item }}</li>
         </ul>
-      </el-card>
-
-      <el-card shadow="never" class="panel-card">
-        <template #header>
-          <div class="panel-card__header">
-            <span>接口使用提醒</span>
-          </div>
-        </template>
-
-        <div class="note-list">
-          <div v-for="item in apiNotes" :key="item">{{ item }}</div>
-        </div>
       </el-card>
     </section>
   </div>
@@ -323,6 +283,7 @@ function handleNavigate(action) {
 }
 
 @media (max-width: 1120px) {
+
   .overview-hero,
   .overview-grid,
   .summary-grid {

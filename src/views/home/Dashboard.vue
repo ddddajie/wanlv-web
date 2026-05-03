@@ -15,6 +15,7 @@ import NormalUserList from '@/views/user/NormalUserList.vue'
 import UserProfileEdit from '@/views/user/UserProfileEdit.vue'
 
 const MapWorkspace = defineAsyncComponent(() => import('@/views/map/MapWorkspace.vue'))
+const TouristMap = defineAsyncComponent(() => import('@/views/map/TouristMap.vue'))
 
 const DEFAULT_AVATAR = '/default-avatar.svg'
 const MOBILE_BREAKPOINT = 1180
@@ -29,6 +30,7 @@ const isSidebarOpen = ref(false)
 
 const canUseAnalysis = computed(() => userStore.isSuperAdmin)
 const canUseUserManagement = computed(() => userStore.isAdmin)
+const canUseChat = computed(() => !userStore.isAdmin)
 const isAdminUser = computed(() => userStore.isAdmin)
 
 const roleLabel = computed(() => {
@@ -100,12 +102,21 @@ const actionCards = computed(() => {
       actionKey: 'profile-edit',
     },
     {
+      title: '景区导游地图',
+      description: '面向游客端展示景区、景点、路线和地图说明，手机端优先适配。',
+      actionText: '打开导游地图',
+      actionKey: 'tourist-map',
+    },
+  ]
+
+  if (canUseChat.value) {
+    cards.splice(1, 0, {
       title: '进入智能问答',
       description: '在工作台内直接打开聊天页面。',
       actionText: '打开聊天',
       actionKey: 'chat-page',
-    },
-  ]
+    })
+  }
 
   if (canUseUserManagement.value) {
     cards.push({
@@ -178,8 +189,11 @@ const apiNotes = computed(() => [
 const menuItems = computed(() => {
   const items = [
     { key: 'overview', label: '概览' },
-    { key: 'chat-page', label: '智能问答' },
   ]
+
+  if (canUseChat.value) {
+    items.push({ key: 'chat-page', label: '智能问答' })
+  }
 
   if (canUseAnalysis.value) {
     items.push({ key: 'daily-report', label: '日报管理' })
@@ -206,6 +220,8 @@ const menuItems = computed(() => {
   } else {
     items.push({ key: 'permission', label: '权限说明' })
   }
+
+  items.splice(2, 0, { key: 'tourist-map', label: '导游地图' })
 
   return items
 })
@@ -394,7 +410,7 @@ onBeforeUnmount(() => {
           </div>
         </header>
 
-        <div class="dashboard-content__body">
+        <div class="dashboard-content__body" :class="{ 'dashboard-content__body--map': activeMenu === 'tourist-map' }">
           <DashboardOverview v-if="activeMenu === 'overview'" :target-base-url="targetBaseUrl"
             :username="userStore.username" :display-name="userStore.displayName" :role-label="roleLabel"
             :hero-title="heroTitle" :hero-description="heroDescription" :hero-alert="heroAlert"
@@ -404,6 +420,8 @@ onBeforeUnmount(() => {
           <UserProfileEdit v-else-if="activeMenu === 'profile-edit'" />
 
           <Chat v-else-if="activeMenu === 'chat-page'" embedded @navigate="handleActionNavigate" />
+
+          <TouristMap v-else-if="activeMenu === 'tourist-map'" />
 
           <DailyReport v-else-if="activeMenu === 'daily-report'" />
 
@@ -708,6 +726,10 @@ onBeforeUnmount(() => {
   gap: 20px;
   overflow: auto;
   padding: 0 6px 6px;
+}
+
+.dashboard-content__body--map {
+  overflow: hidden;
 }
 
 .permission-card {

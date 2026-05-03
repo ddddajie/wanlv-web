@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { pageNormalUsersApi } from '@/api/user'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { deleteNormalUserApi, pageNormalUsersApi, updateNormalUserApi } from '@/api/user'
 import {
   formatDateTime,
   formatGender,
@@ -10,6 +11,8 @@ import {
 } from './userViewUtils'
 
 const loading = ref(false)
+const deletingId = ref(null)
+const statusChangingId = ref(null)
 const pageData = ref({
   total: 0,
   records: [],
@@ -42,6 +45,49 @@ function handleSizeChange(pageSize) {
   query.pageSize = pageSize
   query.pageNum = 1
   fetchList()
+}
+
+async function handleDelete(row) {
+  if (!row?.id) return
+
+  try {
+    await ElMessageBox.confirm(`确定删除普通用户“${row.nickname || row.username || row.id}”吗？删除后账号会被禁用并从列表中移除。`, '确认删除', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+      draggable: true,
+    })
+  } catch {
+    return
+  }
+
+  deletingId.value = row.id
+  try {
+    await deleteNormalUserApi(row.id)
+    ElMessage.success(`普通用户 ${row.nickname || row.username || row.id} 已删除`)
+    if (pageData.value.records.length === 1 && query.pageNum > 1) {
+      query.pageNum -= 1
+    }
+    await fetchList()
+  } finally {
+    deletingId.value = null
+  }
+}
+
+async function handleStatusChange(row) {
+  if (!row?.id) return
+  const nextStatus = Number(row.status) === 1 ? 0 : 1
+  statusChangingId.value = row.id
+  try {
+    await updateNormalUserApi({
+      id: row.id,
+      status: nextStatus,
+    })
+    ElMessage.success(`普通用户 ${row.nickname || row.username || row.id} 已${nextStatus === 1 ? '启用' : '停用'}`)
+    await fetchList()
+  } finally {
+    statusChangingId.value = null
+  }
 }
 
 onMounted(() => {
@@ -96,6 +142,15 @@ onMounted(() => {
         <el-table-column label="创建时间" min-width="180">
           <template #default="{ row }">
             {{ formatDateTime(row.createTime) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button link :type="Number(row.status) === 1 ? 'warning' : 'success'"
+              :loading="statusChangingId === row.id" @click="handleStatusChange(row)">
+              {{ Number(row.status) === 1 ? '停用' : '启用' }}
+            </el-button>
+            <el-button link type="danger" :loading="deletingId === row.id" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

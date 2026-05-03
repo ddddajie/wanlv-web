@@ -14,8 +14,13 @@ const isDashboardRoute = computed(() => route.path === '/dashboard')
 const navItems = computed(() => {
   const items = [
     { label: '控制台', path: '/dashboard' },
-    { label: '智能问答', path: '/chat' },
   ]
+
+  if (!userStore.isAdmin) {
+    items.push({ label: '智能问答', path: '/chat' })
+  }
+
+  items.push({ label: '导游地图', path: '/tourist-map' })
 
   if (userStore.isSuperAdmin) {
     items.push({ label: '新增管理员', path: '/admin/create' })

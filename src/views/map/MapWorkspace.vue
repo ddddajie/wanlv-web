@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ForkSpoon,
   House,
@@ -21,6 +21,10 @@ import {
   createRouteGeoApi,
   createScenicAreaApi,
   createSpotApi,
+  deleteGeoFeatureApi,
+  deleteRouteApi,
+  deleteScenicAreaApi,
+  deleteSpotApi,
   generateRouteGeoApi,
   getMapInitApi,
   getRouteDetailApi,
@@ -95,6 +99,10 @@ const submitting = reactive({
   routeGeo: false,
   routeGeoGenerate: false,
   interaction: false,
+  deleteScenic: false,
+  deleteSpot: false,
+  deleteRoute: false,
+  deleteFeature: false,
 })
 
 const dialogs = reactive({
@@ -1097,6 +1105,96 @@ async function submitRouteGeo() {
   }
 }
 
+async function confirmDelete(message) {
+  try {
+    await ElMessageBox.confirm(message, '确认删除', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+      draggable: true,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function deleteScenic(row) {
+  if (!row?.id) return
+  const confirmed = await confirmDelete(
+    `确定删除景区“${row.scenicName || row.id}”吗？其下景点、路线、空间要素会一并逻辑删除，路线轨迹会同步禁用。`,
+  )
+  if (!confirmed) return
+
+  submitting.deleteScenic = true
+  try {
+    await deleteScenicAreaApi(row.id)
+    ElMessage.success(`景区 ${row.scenicName || row.id} 已删除`)
+    if (Number(selectedScenicId.value) === Number(row.id)) {
+      selectedScenicId.value = null
+      visibleRouteIds.value = []
+    }
+    await fetchScenicPage(!selectedScenicId.value)
+    if (selectedScenicId.value) {
+      await refreshSelectedScenicData()
+    }
+  } finally {
+    submitting.deleteScenic = false
+  }
+}
+
+async function deleteSpot(row) {
+  if (!row?.id) return
+  const confirmed = await confirmDelete(
+    `确定删除景点“${row.spotName || row.id}”吗？包含该景点的路线会一并逻辑删除，路线轨迹会同步禁用。`,
+  )
+  if (!confirmed) return
+
+  submitting.deleteSpot = true
+  try {
+    await deleteSpotApi(row.id)
+    ElMessage.success(`景点 ${row.spotName || row.id} 已删除`)
+    if (Number(spotDetail.value?.id) === Number(row.id)) dialogs.spotDetail = false
+    await Promise.all([fetchSpots(), fetchSpotOptions(), fetchRoutes(), fetchMapInit()])
+  } finally {
+    submitting.deleteSpot = false
+  }
+}
+
+async function deleteRoute(row) {
+  if (!row?.id) return
+  const confirmed = await confirmDelete(`确定删除路线“${row.routeName || row.id}”吗？该路线轨迹会同步禁用。`)
+  if (!confirmed) return
+
+  submitting.deleteRoute = true
+  try {
+    await deleteRouteApi(row.id)
+    ElMessage.success(`路线 ${row.routeName || row.id} 已删除`)
+    visibleRouteIds.value = visibleRouteIds.value.filter((item) => Number(item) !== Number(row.id))
+    if (Number(routeDetail.value?.route?.id) === Number(row.id)) dialogs.routeDetail = false
+    if (Number(routeGeoRoute.value?.id) === Number(row.id)) dialogs.routeGeo = false
+    await Promise.all([fetchRoutes(), fetchMapInit()])
+  } finally {
+    submitting.deleteRoute = false
+  }
+}
+
+async function deleteFeature(row) {
+  if (!row?.id) return
+  const confirmed = await confirmDelete(`确定删除空间要素“${row.featureName || row.id}”吗？`)
+  if (!confirmed) return
+
+  submitting.deleteFeature = true
+  try {
+    await deleteGeoFeatureApi(row.id)
+    ElMessage.success(`空间要素 ${row.featureName || row.id} 已删除`)
+    if (Number(featureForm.id) === Number(row.id)) dialogs.feature = false
+    await Promise.all([fetchFeatures(), fetchMapInit()])
+  } finally {
+    submitting.deleteFeature = false
+  }
+}
+
 async function submitManualInteraction() {
   await submitInteractionLog(interactionForm)
   interactionForm.spotId = ''
@@ -1165,10 +1263,11 @@ onMounted(async () => {
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" min-width="180" fixed="right">
+              <el-table-column label="操作" min-width="220" fixed="right">
                 <template #default="{ row }">
                   <el-button link type="primary" @click="selectedScenicId = row.id">加载地图</el-button>
                   <el-button link type="primary" @click="openScenicEdit(row)">编辑</el-button>
+                  <el-button link type="danger" :loading="submitting.deleteScenic" @click="deleteScenic(row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -1197,10 +1296,11 @@ onMounted(async () => {
               </el-table-column>
               <el-table-column prop="longitude" label="经度" min-width="120" />
               <el-table-column prop="latitude" label="纬度" min-width="120" />
-              <el-table-column label="操作" min-width="160" fixed="right">
+              <el-table-column label="操作" min-width="200" fixed="right">
                 <template #default="{ row }">
                   <el-button link type="primary" @click="openSpotDetail(row.id)">详情</el-button>
                   <el-button link type="primary" @click="openSpotEdit(row)">编辑</el-button>
+                  <el-button link type="danger" :loading="submitting.deleteSpot" @click="deleteSpot(row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -1232,11 +1332,12 @@ onMounted(async () => {
                   {{ formatDistance(toNullableNumber(row.distanceMeters) ?? summarizeRouteMeters(row.geojson)) }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" min-width="220" fixed="right">
+              <el-table-column label="操作" min-width="280" fixed="right">
                 <template #default="{ row }">
                   <el-button link type="primary" @click="openRouteDetail(row.id)">详情</el-button>
                   <el-button link type="primary" @click="openRouteEdit(row)">编辑</el-button>
                   <el-button link type="primary" @click="openRouteGeo(row)">轨迹版本</el-button>
+                  <el-button link type="danger" :loading="submitting.deleteRoute" @click="deleteRoute(row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -1268,9 +1369,10 @@ onMounted(async () => {
               <el-table-column label="几何摘要" min-width="170">
                 <template #default="{ row }">{{ formatGeojsonSummary(row.geojson) }}</template>
               </el-table-column>
-              <el-table-column label="操作" min-width="120" fixed="right">
+              <el-table-column label="操作" min-width="160" fixed="right">
                 <template #default="{ row }">
                   <el-button link type="primary" @click="openFeatureEdit(row)">编辑</el-button>
+                  <el-button link type="danger" :loading="submitting.deleteFeature" @click="deleteFeature(row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
