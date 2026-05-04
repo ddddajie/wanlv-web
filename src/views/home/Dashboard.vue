@@ -16,6 +16,7 @@ import UserProfileEdit from '@/views/user/UserProfileEdit.vue'
 
 const MapWorkspace = defineAsyncComponent(() => import('@/views/map/MapWorkspace.vue'))
 const TouristMap = defineAsyncComponent(() => import('@/views/map/TouristMap.vue'))
+const ReservationDashboardScreen = defineAsyncComponent(() => import('@/views/reservation/ReservationDashboardScreen.vue'))
 const ReservationWorkspace = defineAsyncComponent(() => import('@/views/reservation/ReservationWorkspace.vue'))
 
 const DEFAULT_AVATAR = '/default-avatar.svg'
@@ -33,6 +34,7 @@ const canUseAnalysis = computed(() => userStore.isSuperAdmin)
 const canUseUserManagement = computed(() => userStore.isAdmin)
 const canUseChat = computed(() => !userStore.isAdmin)
 const isAdminUser = computed(() => userStore.isAdmin)
+const isDashboardScreenActive = computed(() => activeMenu.value === 'reservation-dashboard-screen')
 
 const roleLabel = computed(() => {
   if (userStore.isSuperAdmin) return '超级管理员'
@@ -202,10 +204,14 @@ const menuItems = computed(() => {
   }
 
   if (canUseUserManagement.value) {
+    items.push({ key: 'reservation-dashboard-screen', label: '数据看板' })
+
     items.push({
       key: 'scenic-management',
       label: '景区管理',
-      children: [{ key: 'map-workspace', label: '地图业务控制台' }],
+      children: [
+        { key: 'map-workspace', label: '地图业务控制台' },
+      ],
     })
 
     items.push({
@@ -218,8 +224,6 @@ const menuItems = computed(() => {
         { key: 'user-normal-list', label: '普通用户分页列表' },
       ],
     })
-  } else {
-    items.push({ key: 'permission', label: '权限说明' })
   }
 
   items.splice(2, 0, { key: 'tourist-map', label: '导游地图' })
@@ -332,9 +336,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="dashboard-workspace">
-    <section class="dashboard-workspace__frame glass-card"
-      :class="{ 'dashboard-workspace__frame--compact': isCompactSidebar }">
-      <aside class="dashboard-sidebar" :class="{
+    <section class="dashboard-workspace__frame glass-card" :class="{
+      'dashboard-workspace__frame--compact': isCompactSidebar,
+      'dashboard-workspace__frame--screen': isDashboardScreenActive,
+    }">
+      <aside v-if="!isDashboardScreenActive" class="dashboard-sidebar" :class="{
         'dashboard-sidebar--compact': isCompactSidebar,
         'dashboard-sidebar--open': isCompactSidebar && isSidebarOpen,
       }">
@@ -391,12 +397,12 @@ onBeforeUnmount(() => {
       </aside>
 
       <transition name="dashboard-sidebar-mask">
-        <button v-if="isCompactSidebar && isSidebarOpen" type="button" class="dashboard-sidebar__mask" aria-label="关闭菜单"
-          @click="closeSidebar" />
+        <button v-if="!isDashboardScreenActive && isCompactSidebar && isSidebarOpen" type="button"
+          class="dashboard-sidebar__mask" aria-label="关闭菜单" @click="closeSidebar" />
       </transition>
 
       <div class="dashboard-content">
-        <header class="dashboard-content__header">
+        <header v-if="!isDashboardScreenActive" class="dashboard-content__header">
           <div class="dashboard-content__header-main">
             <button v-if="isCompactSidebar" type="button" class="dashboard-content__menu-toggle"
               :aria-expanded="isSidebarOpen" :aria-label="isSidebarOpen ? '关闭菜单' : '打开菜单'" @click="toggleSidebar">
@@ -412,7 +418,10 @@ onBeforeUnmount(() => {
           </div>
         </header>
 
-        <div class="dashboard-content__body" :class="{ 'dashboard-content__body--map': activeMenu === 'tourist-map' }">
+        <div class="dashboard-content__body" :class="{
+          'dashboard-content__body--map': activeMenu === 'tourist-map',
+          'dashboard-content__body--screen': activeMenu === 'reservation-dashboard-screen',
+        }">
           <DashboardOverview v-if="activeMenu === 'overview'" :target-base-url="targetBaseUrl"
             :username="userStore.username" :display-name="userStore.displayName" :role-label="roleLabel"
             :hero-title="heroTitle" :hero-description="heroDescription" :hero-alert="heroAlert"
@@ -426,6 +435,9 @@ onBeforeUnmount(() => {
           <TouristMap v-else-if="activeMenu === 'tourist-map'" />
 
           <ReservationWorkspace v-else-if="activeMenu === 'reservation-workspace'" />
+
+          <ReservationDashboardScreen v-else-if="activeMenu === 'reservation-dashboard-screen'"
+            @navigate="handleActionNavigate" />
 
           <DailyReport v-else-if="activeMenu === 'daily-report'" />
 
@@ -441,20 +453,6 @@ onBeforeUnmount(() => {
 
           <NormalUserList v-else-if="activeMenu === 'user-normal-list'" />
 
-          <el-card v-else shadow="never" class="permission-card">
-            <template #header>
-              <div class="permission-card__header">
-                <span>权限说明</span>
-              </div>
-            </template>
-
-            <el-empty description="当前账号不是管理员，因此用户管理、日报管理和新增管理员等能力不会开放。你仍然可以继续使用概览、修改信息和聊天功能。" :image-size="96" />
-
-            <div v-if="isAdminUser" class="permission-card__tips">
-              <el-alert title="管理员账号已具备用户管理能力" description="如果菜单没有显示，请重新登录或刷新当前页面同步权限状态。" type="info" :closable="false"
-                show-icon />
-            </div>
-          </el-card>
         </div>
       </div>
     </section>
@@ -478,6 +476,11 @@ onBeforeUnmount(() => {
   border-radius: 0;
   box-shadow: none;
   overflow: hidden;
+}
+
+.dashboard-workspace__frame--screen {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
 }
 
 .dashboard-sidebar {
@@ -676,6 +679,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.dashboard-workspace__frame--screen .dashboard-content {
+  gap: 0;
+}
+
 .dashboard-content__header {
   flex: 0 0 auto;
   padding: 8px 6px 0;
@@ -737,6 +744,11 @@ onBeforeUnmount(() => {
 
 .dashboard-content__body--map {
   overflow: hidden;
+}
+
+.dashboard-content__body--screen {
+  overflow: auto;
+  padding: 0;
 }
 
 .permission-card {

@@ -21,37 +21,41 @@ export function cancelReservationOrderApi(reservationNo, data) {
 }
 
 export function createReservationRuleApi(data) {
-  return request.post('/admin/reservation/rules', data)
+  return request.post('/reservation/admin/rules', data)
 }
 
 export function updateReservationRuleApi(id, data) {
-  return request.put(`/admin/reservation/rules/${id}`, data)
+  return request.put(`/reservation/admin/rules/${id}`, data)
 }
 
 export function updateReservationRuleStatusApi(id, data) {
-  return request.put(`/admin/reservation/rules/${id}/status`, data)
+  return request.put(`/reservation/admin/rules/${id}/status`, data)
 }
 
 export function pageReservationRulesApi(params) {
-  return request.get('/admin/reservation/rules', { params })
+  return request.get('/reservation/admin/rules', { params })
 }
 
 export function generateReservationSlotsApi(data) {
-  return request.post('/admin/reservation/slots/generate', data)
+  return request.post('/reservation/admin/slots/generate', data)
 }
 
 export function createReservationSlotApi(data) {
-  return request.post('/admin/reservation/slots', data)
+  return request.post('/reservation/admin/slots', data)
 }
 
 export function updateReservationSlotApi(id, data) {
-  return request.put(`/admin/reservation/slots/${id}`, data)
+  return request.put(`/reservation/admin/slots/${id}`, data)
 }
 
 export function pageReservationSlotsApi(params) {
-  return request.get('/admin/reservation/slots', { params })
+  return request.get('/reservation/admin/slots', { params })
 }
 
 export function pageReservationOrdersApi(params) {
-  return request.get('/admin/reservation/orders', { params })
+  return request.get('/reservation/admin/orders', { params })
+}
+
+export function getReservationDashboardApi(params) {
+  return request.get('/reservation/admin/dashboard', { params })
 }
