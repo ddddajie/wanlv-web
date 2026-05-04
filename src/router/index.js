@@ -37,7 +37,7 @@ const routes = [
       {
         path: 'chat',
         name: 'Chat',
-        component: () => import('@/views/chat/Chat.vue'),
+        component: () => import('@/views/chat/Chat-2.0.vue'),
         meta: { title: '智能问答', requiresAuth: true, normalOnly: true },
       },
       {

@@ -7,7 +7,7 @@ import { targetBaseUrl } from '@/utils/request'
 import AdminCreate from '@/views/user/AdminCreate.vue'
 import AdminUserDetail from '@/views/user/AdminUserDetail.vue'
 import AdminUserList from '@/views/user/AdminUserList.vue'
-import Chat from '@/views/chat/Chat.vue'
+import Chat from '@/views/chat/Chat-2.0.vue'
 import DashboardOverview from '@/views/overview/DashboardOverview.vue'
 import DailyReport from '@/views/report/DailyReport.vue'
 import NormalUserDetail from '@/views/user/NormalUserDetail.vue'
@@ -459,7 +459,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .dashboard-workspace {
-  height: calc(100vh - 48px);
+  height: 100vh;
   overflow: hidden;
 }
 
@@ -469,7 +469,10 @@ onBeforeUnmount(() => {
   gap: 24px;
   position: relative;
   height: 100%;
-  padding: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -774,9 +777,9 @@ onBeforeUnmount(() => {
 
   .dashboard-sidebar--compact {
     position: absolute;
-    top: 24px;
-    left: 24px;
-    bottom: 24px;
+    top: 0;
+    left: 0;
+    bottom: 0;
     z-index: 20;
     width: min(320px, calc(100vw - 48px));
     max-width: calc(100vw - 48px);
@@ -792,11 +795,11 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .dashboard-workspace {
-    height: calc(100vh - 32px);
+    height: 100vh;
   }
 
   .dashboard-workspace__frame {
-    padding: 16px;
+    padding: 0;
   }
 
   .dashboard-sidebar {
@@ -804,9 +807,9 @@ onBeforeUnmount(() => {
   }
 
   .dashboard-sidebar--compact {
-    top: 16px;
-    left: 16px;
-    bottom: 16px;
+    top: 0;
+    left: 0;
+    bottom: 0;
     width: min(320px, calc(100vw - 32px));
     max-width: calc(100vw - 32px);
     transform: translateX(calc(-100% - 16px));
