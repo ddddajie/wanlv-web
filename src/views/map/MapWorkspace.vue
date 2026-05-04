@@ -168,6 +168,10 @@ const spotForm = reactive({
   audioUrl: '',
   videoUrl: '',
   knowledgeDocId: '',
+  reservationEnabled: 0,
+  reservationNotice: '',
+  advanceReservationDays: 0,
+  minAdvanceMinutes: 0,
   recommendedLevel: 0,
   sortNo: 1,
   status: 1,
@@ -529,6 +533,10 @@ function resetSpotForm() {
     audioUrl: '',
     videoUrl: '',
     knowledgeDocId: '',
+    reservationEnabled: 0,
+    reservationNotice: '',
+    advanceReservationDays: 0,
+    minAdvanceMinutes: 0,
     recommendedLevel: 0,
     sortNo: 1,
     status: 1,
@@ -805,6 +813,10 @@ function openSpotEdit(row) {
     recommendedLevel: toNullableNumber(row.recommendedLevel) ?? 0,
     stayDurationMinutes: toNullableNumber(row.stayDurationMinutes) ?? 60,
     sortNo: toNullableNumber(row.sortNo) ?? 1,
+    reservationEnabled: toNullableNumber(row.reservationEnabled) ?? 0,
+    advanceReservationDays: toNullableNumber(row.advanceReservationDays) ?? 0,
+    minAdvanceMinutes: toNullableNumber(row.minAdvanceMinutes) ?? 0,
+    reservationNotice: row.reservationNotice || '',
     openingHours: row.openingHours || '8:00-16:00',
   })
   spotMapKey.value += 1
@@ -1011,6 +1023,9 @@ async function submitSpot() {
         'knowledgeDocId',
         'recommendedLevel',
         'sortNo',
+        'reservationEnabled',
+        'advanceReservationDays',
+        'minAdvanceMinutes',
         'status',
         'createBy',
         'updateBy',
@@ -1294,6 +1309,16 @@ onMounted(async () => {
               <el-table-column label="类型" min-width="120">
                 <template #default="{ row }">{{ formatPoiType(row.poiType) }}</template>
               </el-table-column>
+              <el-table-column label="预约" min-width="90">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="Number(row.reservationEnabled) === 1 ? 'success' : 'info'" effect="plain">
+                    {{ Number(row.reservationEnabled) === 1 ? '支持' : '不支持' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="reservationNotice" label="预约须知" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="advanceReservationDays" label="提前天数" min-width="100" />
+              <el-table-column prop="minAdvanceMinutes" label="提前分钟" min-width="100" />
               <el-table-column prop="longitude" label="经度" min-width="120" />
               <el-table-column prop="latitude" label="纬度" min-width="120" />
               <el-table-column label="操作" min-width="200" fixed="right">
@@ -1566,6 +1591,14 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item label="开放时间"><el-input v-model="spotForm.openingHours" /></el-form-item>
+          <el-form-item label="是否支持预约"><el-switch v-model="spotForm.reservationEnabled" :active-value="1"
+              :inactive-value="0" /></el-form-item>
+          <el-form-item label="最多可提前预约天数">
+            <el-input-number v-model="spotForm.advanceReservationDays" :min="0" :precision="0" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="最少提前预约分钟数">
+            <el-input-number v-model="spotForm.minAdvanceMinutes" :min="0" :precision="0" controls-position="right" />
+          </el-form-item>
           <el-form-item label="状态"><el-switch v-model="spotForm.status" :active-value="1"
               :inactive-value="0" /></el-form-item>
           <el-form-item label="景点位置" class="span-2">
@@ -1574,6 +1607,8 @@ onMounted(async () => {
               :label="spotForm.spotName || '当前选择位置'" @location-change="applySpotLocation" />
           </el-form-item>
           <el-form-item label="简介" class="span-2"><el-input v-model="spotForm.shortIntro" type="textarea"
+              :rows="2" /></el-form-item>
+          <el-form-item label="预约须知" class="span-2"><el-input v-model="spotForm.reservationNotice" type="textarea"
               :rows="2" /></el-form-item>
           <el-form-item label="描述" class="span-2"><el-input v-model="spotForm.description" type="textarea"
               :rows="3" /></el-form-item>

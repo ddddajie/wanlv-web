@@ -188,7 +188,6 @@ onMounted(fetchScenicOptions)
             v-model="selectedScenicId"
             class="tourist-map__select"
             :loading="isLoadingScenic"
-            filterable
             placeholder="切换景区"
             @change="handleScenicChange"
           >

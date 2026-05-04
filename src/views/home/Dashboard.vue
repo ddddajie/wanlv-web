@@ -16,6 +16,7 @@ import UserProfileEdit from '@/views/user/UserProfileEdit.vue'
 
 const MapWorkspace = defineAsyncComponent(() => import('@/views/map/MapWorkspace.vue'))
 const TouristMap = defineAsyncComponent(() => import('@/views/map/TouristMap.vue'))
+const ReservationWorkspace = defineAsyncComponent(() => import('@/views/reservation/ReservationWorkspace.vue'))
 
 const DEFAULT_AVATAR = '/default-avatar.svg'
 const MOBILE_BREAKPOINT = 1180
@@ -222,6 +223,7 @@ const menuItems = computed(() => {
   }
 
   items.splice(2, 0, { key: 'tourist-map', label: '导游地图' })
+  items.splice(3, 0, { key: 'reservation-workspace', label: userStore.isAdmin ? '预约管理' : '景点预约' })
 
   return items
 })
@@ -422,6 +424,8 @@ onBeforeUnmount(() => {
           <Chat v-else-if="activeMenu === 'chat-page'" embedded @navigate="handleActionNavigate" />
 
           <TouristMap v-else-if="activeMenu === 'tourist-map'" />
+
+          <ReservationWorkspace v-else-if="activeMenu === 'reservation-workspace'" />
 
           <DailyReport v-else-if="activeMenu === 'daily-report'" />
 
