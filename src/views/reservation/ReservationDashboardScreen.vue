@@ -127,7 +127,7 @@ const timeText = computed(() => {
 
 const metrics = computed(() => [
   {
-    title: '今日预约订单',
+    title: '今日预约',
     value: formatNumber(dashboard.summary.orderCount),
     desc: dashboard.summary.orderCompareText || '暂无对比数据',
     icon: Calendar,
@@ -135,7 +135,7 @@ const metrics = computed(() => [
     trend: String(dashboard.summary.orderCompareText || '').includes('+') ? 'up' : '',
   },
   {
-    title: '预约游客',
+    title: '今日游客',
     value: formatNumber(dashboard.summary.visitorCount),
     desc: dashboard.summary.visitorHint || '暂无峰值提示',
     icon: User,
@@ -157,7 +157,7 @@ const metrics = computed(() => [
     trend: 'up-danger',
   },
   {
-    title: '当前预警数',
+    title: '预警数',
     value: formatNumber(warnings.value.length),
     desc: warnings.value.length ? '需重点关注' : '暂无预警',
     icon: WarningFilled,
@@ -243,6 +243,7 @@ function getRateColor(rate) {
 async function fetchDashboard({ silent = false } = {}) {
   loading.value = true
   try {
+    // 重点：看板 date 统一传预约日期 visitDate，不按订单创建日期统计。
     const result = await getReservationDashboardApi({
       scenicAreaId: selectedScenicAreaId.value || undefined,
       date: selectedDate.value || undefined,
@@ -504,7 +505,7 @@ watch([selectedScenicAreaId, selectedDate], () => {
         </el-select>
 
         <el-date-picker v-model="selectedDate" class="header-control header-control--date" type="date"
-          value-format="YYYY-MM-DD" size="large">
+          value-format="YYYY-MM-DD" size="large" placeholder="日期">
           <template #prefix>
             <el-icon>
               <Calendar />
@@ -541,7 +542,7 @@ watch([selectedScenicAreaId, selectedDate], () => {
     <el-alert v-if="useMockData" class="mock-alert" title="预约运营看板接口暂不可用，当前展示示例数据。" type="warning" :closable="false"
       show-icon />
 
-    <!-- 顶部核心指标：管理员快速扫运营状态 -->
+    <!-- 顶部核心指标：按日期展示景区真实承载状态 -->
     <section class="metric-grid" aria-label="核心指标">
       <article v-for="item in metrics" :key="item.title" class="metric-card" :class="`metric-card--${item.tone}`">
         <div class="metric-card__icon">
@@ -626,7 +627,7 @@ watch([selectedScenicAreaId, selectedDate], () => {
             <el-icon>
               <MapLocation />
             </el-icon>
-            <h2>景点预约热力态势</h2>
+            <h2>预约热力态势</h2>
           </div>
           <div class="heat-grid">
             <article v-for="item in heatSpots" :key="item.name" class="heat-card" :class="`heat-card--${item.level}`">

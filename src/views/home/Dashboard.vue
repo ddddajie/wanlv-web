@@ -18,6 +18,9 @@ const MapWorkspace = defineAsyncComponent(() => import('@/views/map/MapWorkspace
 const TouristMap = defineAsyncComponent(() => import('@/views/map/TouristMap.vue'))
 const ReservationDashboardScreen = defineAsyncComponent(() => import('@/views/reservation/ReservationDashboardScreen.vue'))
 const ReservationWorkspace = defineAsyncComponent(() => import('@/views/reservation/ReservationWorkspace.vue'))
+const UserReservationDashboardScreen = defineAsyncComponent(
+  () => import('@/views/reservation/UserReservationDashboardScreen.vue'),
+)
 
 const DEFAULT_AVATAR = '/default-avatar.svg'
 const MOBILE_BREAKPOINT = 1180
@@ -34,7 +37,9 @@ const canUseAnalysis = computed(() => userStore.isSuperAdmin)
 const canUseUserManagement = computed(() => userStore.isAdmin)
 const canUseChat = computed(() => !userStore.isAdmin)
 const isAdminUser = computed(() => userStore.isAdmin)
-const isDashboardScreenActive = computed(() => activeMenu.value === 'reservation-dashboard-screen')
+const isDashboardScreenActive = computed(() =>
+  ['reservation-dashboard-screen', 'user-reservation-dashboard-screen'].includes(activeMenu.value),
+)
 
 const roleLabel = computed(() => {
   if (userStore.isSuperAdmin) return '超级管理员'
@@ -228,6 +233,9 @@ const menuItems = computed(() => {
 
   items.splice(2, 0, { key: 'tourist-map', label: '导游地图' })
   items.splice(3, 0, { key: 'reservation-workspace', label: userStore.isAdmin ? '预约管理' : '景点预约' })
+  if (!userStore.isAdmin) {
+    items.splice(4, 0, { key: 'user-reservation-dashboard-screen', label: '预约状态' })
+  }
 
   return items
 })
@@ -420,7 +428,7 @@ onBeforeUnmount(() => {
 
         <div class="dashboard-content__body" :class="{
           'dashboard-content__body--map': activeMenu === 'tourist-map',
-          'dashboard-content__body--screen': activeMenu === 'reservation-dashboard-screen',
+          'dashboard-content__body--screen': isDashboardScreenActive,
         }">
           <DashboardOverview v-if="activeMenu === 'overview'" :target-base-url="targetBaseUrl"
             :username="userStore.username" :display-name="userStore.displayName" :role-label="roleLabel"
@@ -437,6 +445,9 @@ onBeforeUnmount(() => {
           <ReservationWorkspace v-else-if="activeMenu === 'reservation-workspace'" />
 
           <ReservationDashboardScreen v-else-if="activeMenu === 'reservation-dashboard-screen'"
+            @navigate="handleActionNavigate" />
+
+          <UserReservationDashboardScreen v-else-if="activeMenu === 'user-reservation-dashboard-screen'"
             @navigate="handleActionNavigate" />
 
           <DailyReport v-else-if="activeMenu === 'daily-report'" />
