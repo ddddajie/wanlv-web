@@ -259,7 +259,7 @@ function statusText(value) {
 
 function resetOrderForm() {
   Object.assign(orderForm, {
-    contactName: userStore.displayName || '',
+    contactName: userStore.userInfo?.realName || '',
     contactPhone: userStore.userInfo?.phone || '',
     remark: '',
   })
@@ -1051,12 +1051,11 @@ onMounted(async () => {
           title="预约前需要先完成实名认证，请到个人中心提交真实姓名和身份证号。" show-icon />
         <div class="panel">
           <div class="toolbar">
-            <el-select v-model="reserveQuery.scenicAreaId" clearable placeholder="选择景区"
-              :loading="loading.scenic">
+            <el-select v-model="reserveQuery.scenicAreaId" clearable placeholder="选择景区" :loading="loading.scenic">
               <el-option v-for="item in scenicOptions" :key="item.id" :label="item.scenicName" :value="item.id" />
             </el-select>
-            <el-select v-model="reserveQuery.spotId" clearable placeholder="选择景点"
-              :disabled="!reserveQuery.scenicAreaId" :loading="loading.spots">
+            <el-select v-model="reserveQuery.spotId" clearable placeholder="选择景点" :disabled="!reserveQuery.scenicAreaId"
+              :loading="loading.spots">
               <el-option v-for="item in enabledSpots" :key="getSpotValue(item)" :label="item.spotName"
                 :value="getSpotValue(item)" />
             </el-select>
@@ -1075,7 +1074,8 @@ onMounted(async () => {
             </el-table-column>
             <el-table-column label="操作" width="110" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" :disabled="!isRealNameVerified" @click="openReserveForm(row)">预约</el-button>
+                <el-button link type="primary" :disabled="!isRealNameVerified"
+                  @click="openReserveForm(row)">预约</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -1128,7 +1128,8 @@ onMounted(async () => {
                 <h3>入园人信息</h3>
                 <p>预约本人必须和当前账号实名认证信息一致，身份证号仅用于本次提交。</p>
               </div>
-              <el-button :disabled="visitorForms.length >= visitorLimit || visitorForms.length >= 5" @click="addVisitor">
+              <el-button :disabled="visitorForms.length >= visitorLimit || visitorForms.length >= 5"
+                @click="addVisitor">
                 添加同行人
               </el-button>
             </div>
@@ -1188,13 +1189,8 @@ onMounted(async () => {
             </el-table-column>
             <el-table-column label="操作" width="170" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  link
-                  type="primary"
-                  :disabled="!canEnterOrder(row)"
-                  :loading="enteringReservationNo === row.reservationNo"
-                  @click="enterOrder(row)"
-                >
+                <el-button link type="primary" :disabled="!canEnterOrder(row)"
+                  :loading="enteringReservationNo === row.reservationNo" @click="enterOrder(row)">
                   我已入园
                 </el-button>
                 <el-button link type="danger" :disabled="!canCancel(row)" @click="cancelOrder(row)">取消</el-button>
@@ -1237,7 +1233,7 @@ onMounted(async () => {
             <el-table-column label="状态" min-width="90">
               <template #default="{ row }">
                 <el-tag :type="Number(row.status) === 1 ? 'success' : 'info'" effect="plain">{{ statusText(row.status)
-                  }}</el-tag>
+                }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="160" fixed="right">
@@ -1341,7 +1337,7 @@ onMounted(async () => {
             <el-table-column label="状态" min-width="90">
               <template #default="{ row }">
                 <el-tag :type="Number(row.status) === 1 ? 'success' : 'info'" effect="plain">{{ statusText(row.status)
-                  }}</el-tag>
+                }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">

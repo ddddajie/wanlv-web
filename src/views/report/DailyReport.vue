@@ -2,9 +2,6 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { analyzeDailySessionsApi, analyzeSessionApi } from '@/api/chat'
-import { pinia, useUserStore } from '@/stores'
-
-const userStore = useUserStore(pinia)
 
 const formRef = ref()
 const loading = ref(false)
@@ -20,16 +17,12 @@ function formatDate(date = new Date()) {
 }
 
 const form = reactive({
-  operatorUsername: userStore.isSuperAdmin ? userStore.username || '' : '',
-  operatorPassword: '',
   userId: '',
   reportDate: formatDate(),
   forceReanalyze: false,
 })
 
 const rules = {
-  operatorUsername: [{ required: true, message: '请输入超级管理员账号', trigger: 'blur' }],
-  operatorPassword: [{ required: true, message: '请输入超级管理员密码', trigger: 'blur' }],
   userId: [{ validator: validateOptionalUserId, trigger: 'blur' }],
 }
 
@@ -89,8 +82,6 @@ function toArray(value) {
 
 function buildPayload(extraPayload = {}) {
   return {
-    operatorUsername: form.operatorUsername.trim(),
-    operatorPassword: form.operatorPassword,
     ...extraPayload,
   }
 }
@@ -149,24 +140,6 @@ async function handleSubmit() {
 
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="report-form-grid">
-          <el-form-item label="操作人账号" prop="operatorUsername">
-            <el-input
-              v-model.trim="form.operatorUsername"
-              :disabled="Boolean(userStore.isSuperAdmin && userStore.username)"
-              placeholder="请输入超级管理员账号"
-              clearable
-            />
-          </el-form-item>
-
-          <el-form-item label="操作人密码" prop="operatorPassword">
-            <el-input
-              v-model="form.operatorPassword"
-              placeholder="请输入超级管理员密码"
-              show-password
-              clearable
-            />
-          </el-form-item>
-
           <el-form-item label="用户 ID" prop="userId">
             <el-input
               v-model.trim="form.userId"

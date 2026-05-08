@@ -6,7 +6,8 @@ export const useUserStore = defineStore('wanlv-user', {
     isLogin: false,
   }),
   getters: {
-    isLoggedIn: (state) => state.isLogin && Boolean(state.userInfo),
+    token: (state) => state.userInfo?.token || '',
+    isLoggedIn: (state) => state.isLogin && Boolean(state.userInfo?.token),
     userId: (state) => state.userInfo?.id ?? '',
     username: (state) => state.userInfo?.username ?? '',
     displayName: (state) => state.userInfo?.displayName ?? '',
@@ -24,6 +25,8 @@ export const useUserStore = defineStore('wanlv-user', {
 
       return {
         ...userInfo,
+        // JWT 是后端校验登录态的凭证，必须跟随用户信息一起持久化。
+        token: userInfo.token || '',
         displayName:
           userInfo.displayName ||
           userInfo.realName ||

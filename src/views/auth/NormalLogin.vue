@@ -50,13 +50,13 @@ async function handleSubmit() {
   <AuthShell
     eyebrow="Normal User"
     title="普通用户登录"
-    description="连接当前后端已完成的普通用户登录接口，登录成功后会把用户信息缓存到 Pinia 和本地存储中。"
+    description="连接当前后端已完成的普通用户登录接口，登录成功后会把用户信息和 JWT 缓存到 Pinia 和本地存储中。"
     panel-title="欢迎回来"
     panel-description="输入普通用户账号和密码，进入万旅用户中心。"
     :highlights="[
       { title: '接口联调', description: '按响应体 code = 200 判断成功，失败直接提示后端 msg。' },
-      { title: '状态持久化', description: '登录后的 userInfo 和 isLogin 会自动持久化到 localStorage。' },
-      { title: '简洁直连', description: '当前后端无 token，页面不依赖 Authorization 请求头。' },
+      { title: '状态持久化', description: '登录后的 userInfo、token 和 isLogin 会自动持久化到 localStorage。' },
+      { title: 'JWT 鉴权', description: '后续请求会自动携带 Authorization 请求头。' },
     ]"
   >
     <el-form

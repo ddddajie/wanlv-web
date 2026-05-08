@@ -20,8 +20,6 @@ const loading = ref(false)
 const formRef = ref()
 
 const form = reactive({
-  operatorUsername: userStore.username || '',
-  operatorPassword: '',
   username: '',
   password: '',
   realName: '',
@@ -49,8 +47,6 @@ function validatePhone(rule, value, callback) {
 }
 
 const rules = {
-  operatorUsername: [{ required: true, message: '请输入操作人账号', trigger: 'blur' }],
-  operatorPassword: [{ required: true, message: '请输入操作人密码', trigger: 'blur' }],
   username: [{ required: true, message: '请输入新管理员账号', trigger: 'blur' }],
   password: [
     { required: true, message: '请输入新管理员密码', trigger: 'blur' },
@@ -62,8 +58,6 @@ const rules = {
 
 function buildPayload() {
   return {
-    operatorUsername: form.operatorUsername,
-    operatorPassword: form.operatorPassword,
     username: form.username,
     password: form.password,
     realName: form.realName || undefined,
@@ -76,7 +70,6 @@ function buildPayload() {
 }
 
 function resetFormFields() {
-  form.operatorPassword = ''
   form.username = ''
   form.password = ''
   form.realName = ''
@@ -128,15 +121,6 @@ async function handleSubmit() {
 
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="handleSubmit">
         <div class="form-grid">
-          <el-form-item label="操作人账号" prop="operatorUsername">
-            <el-input v-model.trim="form.operatorUsername" :disabled="canCreateAdmin && Boolean(userStore.username)"
-              placeholder="请输入超级管理员账号" size="large" clearable />
-          </el-form-item>
-
-          <el-form-item label="操作人密码" prop="operatorPassword">
-            <el-input v-model="form.operatorPassword" placeholder="请输入当前超级管理员密码" size="large" show-password clearable />
-          </el-form-item>
-
           <el-form-item label="新管理员账号" prop="username">
             <el-input v-model.trim="form.username" placeholder="请输入新管理员账号" size="large" clearable />
           </el-form-item>
