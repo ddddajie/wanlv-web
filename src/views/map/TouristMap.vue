@@ -12,7 +12,7 @@ import {
   Place,
   Tickets,
 } from '@element-plus/icons-vue'
-import { getMapInitApi, pageScenicAreasApi } from '@/api/map'
+import { getLatestAgentRouteGeoApi, getMapInitApi, pageScenicAreasApi } from '@/api/map'
 import { pinia, useUserStore } from '@/stores'
 import MapCanvas from './MapCanvas.vue'
 import UserMapControls from './UserMapControls.vue'
@@ -29,14 +29,25 @@ const mapData = ref(null)
 const selectedSpot = ref(null)
 const isLoadingScenic = ref(false)
 const isLoadingMap = ref(false)
+const isLoadingAgentRoute = ref(false)
 const isInfoPanelOpen = ref(true)
 const visibleRouteIds = ref([])
 const mapCanvasRef = ref(null)
+const agentRoute = ref(null)
 
 const scenicArea = computed(() => mapData.value?.scenicArea || null)
 const spots = computed(() => mapData.value?.spots || [])
 const routes = computed(() => mapData.value?.routes || [])
 const geoFeatures = computed(() => mapData.value?.geoFeatures || [])
+const displayRoutes = computed(() => (agentRoute.value ? [agentRoute.value, ...routes.value] : routes.value))
+const displayMapData = computed(() =>
+  mapData.value
+    ? {
+        ...mapData.value,
+        routes: displayRoutes.value,
+      }
+    : mapData.value,
+)
 
 const enabledScenicOptions = computed(() =>
   scenicOptions.value.filter((item) => Number(item.status) === 1 || Number(item.id) === Number(selectedScenicId.value)),
@@ -45,6 +56,8 @@ const enabledScenicOptions = computed(() =>
 const officialRoutes = computed(() =>
   routes.value.filter((item) => String(item.routeType || '').trim().toLowerCase() === 'official'),
 )
+
+const recommendedRoutes = computed(() => (agentRoute.value ? [agentRoute.value, ...officialRoutes.value] : officialRoutes.value))
 
 const highlightedSpots = computed(() =>
   spots.value
@@ -96,6 +109,55 @@ function getSelectedScenicName(id = selectedScenicId.value) {
   )
 }
 
+function createAgentRouteId(id) {
+  const routeId = Number(id)
+  return Number.isFinite(routeId) ? -100000000 - routeId : `agent-${Date.now()}`
+}
+
+function parseSpotNamesText(value) {
+  if (!value) return ''
+
+  try {
+    const names = JSON.parse(value)
+    return Array.isArray(names) ? names.filter(Boolean).join('、') : ''
+  } catch {
+    return ''
+  }
+}
+
+function normalizeAgentRoute(data) {
+  if (!data?.geojson) return null
+
+  return {
+    ...data,
+    // 专属路线使用前端临时 ID，避免和官方路线 ID 撞号后影响地图开关。
+    id: createAgentRouteId(data.id),
+    agentRouteGeoId: data.id,
+    routeType: 'agent_custom',
+    routeName: data.routeName || '我的专属路线',
+    description: parseSpotNamesText(data.spotNamesJson),
+    status: 1,
+  }
+}
+
+async function fetchLatestAgentRoute() {
+  agentRoute.value = null
+  if (!userStore.isLoggedIn || !userStore.userId || !selectedScenicId.value) return
+
+  isLoadingAgentRoute.value = true
+  try {
+    const result = await getLatestAgentRouteGeoApi({
+      userId: userStore.userId,
+      scenicAreaId: Number(selectedScenicId.value),
+    })
+    agentRoute.value = normalizeAgentRoute(result)
+  } catch (error) {
+    console.error('Failed to load latest agent route:', error)
+  } finally {
+    isLoadingAgentRoute.value = false
+  }
+}
+
 function syncRouteQuery(id) {
   const scenicName = getSelectedScenicName(id)
   router.replace({
@@ -134,7 +196,8 @@ async function fetchMapData() {
     mapData.value = await getMapInitApi(Number(selectedScenicId.value))
     cacheScenicNames([mapData.value?.scenicArea])
     syncRouteQuery(selectedScenicId.value)
-    visibleRouteIds.value = officialRoutes.value.filter(hasRouteGeojson).map((item) => item.id).filter(Boolean).slice(0, 2)
+    await fetchLatestAgentRoute()
+    visibleRouteIds.value = recommendedRoutes.value.filter(hasRouteGeojson).map((item) => item.id).filter(Boolean).slice(0, 2)
     await nextTick()
     mapCanvasRef.value?.resize()
   } catch (error) {
@@ -185,22 +248,21 @@ function handleSpotClick(id) {
 }
 
 function toggleRoute(routeId) {
-  const route = officialRoutes.value.find((item) => Number(item.id) === Number(routeId))
+  const route = recommendedRoutes.value.find((item) => String(item.id) === String(routeId))
   if (!hasRouteGeojson(route)) {
     ElMessage.warning('该路线暂未配置轨迹')
     return
   }
 
-  const normalizedId = Number(routeId)
-  if (!Number.isFinite(normalizedId)) return
+  const normalizedId = String(routeId)
 
-  visibleRouteIds.value = visibleRouteIds.value.some((item) => Number(item) === normalizedId)
-    ? visibleRouteIds.value.filter((item) => Number(item) !== normalizedId)
+  visibleRouteIds.value = visibleRouteIds.value.some((item) => String(item) === normalizedId)
+    ? visibleRouteIds.value.filter((item) => String(item) !== normalizedId)
     : [...visibleRouteIds.value, routeId]
 }
 
 function isRouteVisible(routeId) {
-  return visibleRouteIds.value.some((item) => Number(item) === Number(routeId))
+  return visibleRouteIds.value.some((item) => String(item) === String(routeId))
 }
 
 function hasRouteGeojson(route) {
@@ -229,7 +291,7 @@ onMounted(fetchScenicOptions)
     <div class="tourist-map__canvas" v-loading="isLoadingMap">
       <MapCanvas
         ref="mapCanvasRef"
-        :map-data="mapData"
+        :map-data="displayMapData"
         :visible-route-ids="visibleRouteIds"
         :show-native-controls="false"
         compact
@@ -267,7 +329,7 @@ onMounted(fetchScenicOptions)
 
         <button type="button" class="tourist-map__top-info" @click="isInfoPanelOpen = !isInfoPanelOpen">
           <span><el-icon><Place /></el-icon>{{ spots.length }}</span>
-          <span><el-icon><Flag /></el-icon>{{ routes.length }}</span>
+          <span><el-icon><Flag /></el-icon>{{ displayRoutes.length }}</span>
           <span><el-icon><Tickets /></el-icon>{{ geoFeatures.length }}</span>
           <el-icon class="tourist-map__top-info-arrow" :class="{ 'is-open': isInfoPanelOpen }"><ArrowDown /></el-icon>
         </button>
@@ -278,7 +340,7 @@ onMounted(fetchScenicOptions)
       <UserMapControls
         :scenic-area="scenicArea"
         :spot-count="spots.length"
-        :route-count="routes.length"
+        :route-count="displayRoutes.length"
         :feature-count="geoFeatures.length"
         :loading="isLoadingMap"
         :panel-open="isInfoPanelOpen"
@@ -308,7 +370,7 @@ onMounted(fetchScenicOptions)
 
         <div class="tourist-map__quick-info">
           <span><el-icon><Place /></el-icon>{{ spots.length }} 个景点</span>
-          <span><el-icon><Flag /></el-icon>{{ routes.length }} 条路线</span>
+          <span><el-icon><Flag /></el-icon>{{ displayRoutes.length }} 条路线</span>
           <span><el-icon><Tickets /></el-icon>{{ geoFeatures.length }} 个要素</span>
         </div>
 
@@ -328,19 +390,24 @@ onMounted(fetchScenicOptions)
             <span>推荐路线</span>
             <small>点击开关显示</small>
           </div>
-          <div v-if="officialRoutes.length" class="tourist-map__route-list">
+          <div v-if="recommendedRoutes.length" class="tourist-map__route-list">
             <button
-              v-for="item in officialRoutes"
+              v-for="item in recommendedRoutes"
               :key="item.id"
               type="button"
               class="tourist-map__route"
-              :class="{ 'is-active': isRouteVisible(item.id), 'is-disabled': !hasRouteGeojson(item) }"
+              :class="{
+                'is-active': isRouteVisible(item.id),
+                'is-disabled': !hasRouteGeojson(item),
+                'is-agent-route': item.routeType === 'agent_custom',
+              }"
               @click="toggleRoute(item.id)"
             >
               <span>{{ item.routeName || '未命名路线' }}</span>
               <strong>{{ hasRouteGeojson(item) ? (isRouteVisible(item.id) ? '点击隐藏' : '点击显示') : '未配置轨迹' }}</strong>
             </button>
           </div>
+          <p v-else-if="isLoadingAgentRoute" class="tourist-map__muted">正在加载专属路线...</p>
           <p v-else class="tourist-map__muted">当前景区暂无推荐路线。</p>
         </div>
 
@@ -664,6 +731,15 @@ onMounted(fetchScenicOptions)
   border-color: rgba(15, 118, 110, 0.42);
   background: rgba(15, 118, 110, 0.1);
   color: #0f766e;
+}
+
+.tourist-map__route.is-agent-route {
+  border-color: rgba(124, 58, 237, 0.35);
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.tourist-map__route.is-agent-route.is-active {
+  color: #6d28d9;
 }
 
 .tourist-map__route.is-disabled {

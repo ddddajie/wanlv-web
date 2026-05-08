@@ -68,12 +68,14 @@ const visibleRouteIds = ref([])
 const mapInit = ref(null)
 const spotOptions = ref([])
 const geoFeatureList = ref([])
+const featureTableList = ref([])
 const recentLogs = ref([])
 const sessionId = ref(createSessionId())
 
 const scenicPage = ref({ total: 0, records: [] })
 const spotPage = ref({ total: 0, records: [] })
 const routePage = ref({ total: 0, records: [] })
+const featurePage = ref({ total: 0, records: [] })
 const routeGeoList = ref([])
 const routeGeoRoute = ref(null)
 const routeGeoGenerateWarnings = ref([])
@@ -126,6 +128,7 @@ const modes = reactive({
 const scenicQuery = reactive({ pageNum: 1, pageSize: 8, scenicName: '', status: '' })
 const spotQuery = reactive({ pageNum: 1, pageSize: 10, scenicAreaId: '', spotName: '', status: '' })
 const routeQuery = reactive({ pageNum: 1, pageSize: 10, scenicAreaId: '', routeName: '', status: '' })
+const featureQuery = reactive({ pageNum: 1, pageSize: 10, scenicAreaId: '', featureName: '', status: '' })
 
 const scenicForm = reactive({
   id: null,
@@ -255,6 +258,15 @@ const routeGeoRules = {
 
 const scenicOptions = computed(() => scenicPage.value.records)
 const selectedScenic = computed(() => scenicOptions.value.find((item) => Number(item.id) === Number(selectedScenicId.value)))
+const filteredFeatureList = computed(() => {
+  const featureName = String(featureQuery.featureName || '').trim()
+  const status = featureQuery.status
+  return featureTableList.value.filter((item) => {
+    const matchesName = !featureName || String(item.featureName || '').includes(featureName)
+    const matchesStatus = status === '' || Number(item.status) === Number(status)
+    return matchesName && matchesStatus
+  })
+})
 const spotScenicArea = computed(() => scenicOptions.value.find((item) => Number(item.id) === Number(spotForm.scenicAreaId)) || selectedScenic.value)
 const spotPickedLocation = computed(() => {
   const longitude = toNullableNumber(spotForm.longitude)
@@ -610,11 +622,18 @@ async function fetchScenicPage(forceSelectFirst = false) {
       }),
     )
     if (!scenicPage.value.records.length) {
+      if (scenicPage.value.total > 0 && scenicQuery.pageNum > 1) {
+        scenicQuery.pageNum -= 1
+        await fetchScenicPage(forceSelectFirst)
+        return
+      }
       selectedScenicId.value = null
       mapInit.value = null
       spotPage.value = { total: 0, records: [] }
       routePage.value = { total: 0, records: [] }
+      featurePage.value = { total: 0, records: [] }
       geoFeatureList.value = []
+      featureTableList.value = []
       spotOptions.value = []
       return
     }
@@ -637,9 +656,77 @@ async function fetchSpots() {
         status: spotQuery.status === '' ? undefined : Number(spotQuery.status),
       }),
     )
+    if (!spotPage.value.records.length && spotPage.value.total > 0 && spotQuery.pageNum > 1) {
+      spotQuery.pageNum -= 1
+      await fetchSpots()
+    }
   } finally {
     loading.spots = false
   }
+}
+
+function queryScenicPage() {
+  scenicQuery.pageNum = 1
+  fetchScenicPage()
+}
+
+function querySpots() {
+  spotQuery.pageNum = 1
+  fetchSpots()
+}
+
+function queryRoutes() {
+  routeQuery.pageNum = 1
+  fetchRoutes()
+}
+
+function queryFeatures() {
+  featureQuery.pageNum = 1
+  fetchFeatures()
+}
+
+function handleScenicSizeChange(size) {
+  scenicQuery.pageSize = size
+  scenicQuery.pageNum = 1
+  fetchScenicPage()
+}
+
+function handleScenicCurrentChange(page) {
+  scenicQuery.pageNum = page
+  fetchScenicPage()
+}
+
+function handleSpotSizeChange(size) {
+  spotQuery.pageSize = size
+  spotQuery.pageNum = 1
+  fetchSpots()
+}
+
+function handleSpotCurrentChange(page) {
+  spotQuery.pageNum = page
+  fetchSpots()
+}
+
+function handleRouteSizeChange(size) {
+  routeQuery.pageSize = size
+  routeQuery.pageNum = 1
+  fetchRoutes()
+}
+
+function handleRouteCurrentChange(page) {
+  routeQuery.pageNum = page
+  fetchRoutes()
+}
+
+function handleFeatureSizeChange(size) {
+  featureQuery.pageSize = size
+  featureQuery.pageNum = 1
+  applyFeaturePage()
+}
+
+function handleFeatureCurrentChange(page) {
+  featureQuery.pageNum = page
+  applyFeaturePage()
 }
 
 async function fetchSpotOptions() {
@@ -661,6 +748,10 @@ async function fetchRoutes() {
         status: routeQuery.status === '' ? undefined : Number(routeQuery.status),
       }),
     )
+    if (!routePage.value.records.length && routePage.value.total > 0 && routeQuery.pageNum > 1) {
+      routeQuery.pageNum -= 1
+      await fetchRoutes()
+    }
   } finally {
     loading.routes = false
   }
@@ -670,10 +761,30 @@ async function fetchFeatures() {
   if (!selectedScenicId.value) return
   loading.features = true
   try {
-    const result = await listGeoFeaturesApi(Number(selectedScenicId.value))
-    geoFeatureList.value = Array.isArray(result) ? result : []
+    const scenicAreaId = featureQuery.scenicAreaId === '' ? selectedScenicId.value : Number(featureQuery.scenicAreaId)
+    const result = await listGeoFeaturesApi(Number(scenicAreaId))
+    featureTableList.value = Array.isArray(result) ? result : []
+    applyFeaturePage()
   } finally {
     loading.features = false
+  }
+}
+
+async function fetchFeatureMapList() {
+  if (!selectedScenicId.value) return
+  const result = await listGeoFeaturesApi(Number(selectedScenicId.value))
+  geoFeatureList.value = Array.isArray(result) ? result : []
+}
+
+function applyFeaturePage() {
+  const total = filteredFeatureList.value.length
+  const maxPage = Math.max(1, Math.ceil(total / featureQuery.pageSize))
+  if (featureQuery.pageNum > maxPage) featureQuery.pageNum = maxPage
+
+  const start = (featureQuery.pageNum - 1) * featureQuery.pageSize
+  featurePage.value = {
+    total,
+    records: filteredFeatureList.value.slice(start, start + featureQuery.pageSize),
   }
 }
 
@@ -690,7 +801,7 @@ async function fetchMapInit() {
 async function refreshSelectedScenicData() {
   if (!selectedScenicId.value) return
   interactionForm.scenicAreaId = selectedScenicId.value
-  await Promise.all([fetchMapInit(), fetchSpots(), fetchSpotOptions(), fetchRoutes(), fetchFeatures()])
+  await Promise.all([fetchMapInit(), fetchSpots(), fetchSpotOptions(), fetchRoutes(), fetchFeatures(), fetchFeatureMapList()])
 }
 
 function pushRecentLog(record) {
@@ -1093,7 +1204,7 @@ async function submitFeature() {
       ElMessage.success(`空间要素 ${payload.featureName} 更新成功`)
     }
     dialogs.feature = false
-    await Promise.all([fetchFeatures(), fetchMapInit()])
+    await Promise.all([fetchFeatures(), fetchFeatureMapList(), fetchMapInit()])
   } finally {
     submitting.feature = false
   }
@@ -1204,7 +1315,7 @@ async function deleteFeature(row) {
     await deleteGeoFeatureApi(row.id)
     ElMessage.success(`空间要素 ${row.featureName || row.id} 已删除`)
     if (Number(featureForm.id) === Number(row.id)) dialogs.feature = false
-    await Promise.all([fetchFeatures(), fetchMapInit()])
+    await Promise.all([fetchFeatures(), fetchFeatureMapList(), fetchMapInit()])
   } finally {
     submitting.deleteFeature = false
   }
@@ -1223,6 +1334,10 @@ watch(selectedScenicId, async (value, oldValue) => {
   visibleRouteIds.value = []
   spotQuery.scenicAreaId = value
   routeQuery.scenicAreaId = value
+  featureQuery.scenicAreaId = value
+  spotQuery.pageNum = 1
+  routeQuery.pageNum = 1
+  featureQuery.pageNum = 1
   interactionForm.scenicAreaId = value
   await refreshSelectedScenicData()
 })
@@ -1262,7 +1377,7 @@ onMounted(async () => {
                 <el-option label="启用" :value="1" />
                 <el-option label="停用" :value="0" />
               </el-select>
-              <el-button type="primary" :loading="loading.scenic" @click="fetchScenicPage">查询景区</el-button>
+              <el-button type="primary" :loading="loading.scenic" @click="queryScenicPage">查询景区</el-button>
               <el-button plain @click="openScenicCreate">新增景区</el-button>
             </div>
             <el-table :data="scenicPage.records" v-loading="loading.scenic" stripe>
@@ -1286,6 +1401,17 @@ onMounted(async () => {
                 </template>
               </el-table-column>
             </el-table>
+            <el-pagination
+              v-model:current-page="scenicQuery.pageNum"
+              v-model:page-size="scenicQuery.pageSize"
+              class="table-pagination"
+              :page-sizes="[8, 10, 20, 50]"
+              :total="scenicPage.total"
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleScenicSizeChange"
+              @current-change="handleScenicCurrentChange"
+            />
           </section>
         </el-tab-pane>
 
@@ -1300,7 +1426,7 @@ onMounted(async () => {
                 <el-option label="启用" :value="1" />
                 <el-option label="停用" :value="0" />
               </el-select>
-              <el-button type="primary" :loading="loading.spots" @click="fetchSpots">查询景点</el-button>
+              <el-button type="primary" :loading="loading.spots" @click="querySpots">查询景点</el-button>
               <el-button plain @click="openSpotCreate">新增景点</el-button>
             </div>
             <el-table :data="spotPage.records" v-loading="loading.spots" stripe>
@@ -1329,6 +1455,17 @@ onMounted(async () => {
                 </template>
               </el-table-column>
             </el-table>
+            <el-pagination
+              v-model:current-page="spotQuery.pageNum"
+              v-model:page-size="spotQuery.pageSize"
+              class="table-pagination"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="spotPage.total"
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleSpotSizeChange"
+              @current-change="handleSpotCurrentChange"
+            />
           </section>
         </el-tab-pane>
 
@@ -1343,7 +1480,7 @@ onMounted(async () => {
                 <el-option label="启用" :value="1" />
                 <el-option label="停用" :value="0" />
               </el-select>
-              <el-button type="primary" :loading="loading.routes" @click="fetchRoutes">查询路线</el-button>
+              <el-button type="primary" :loading="loading.routes" @click="queryRoutes">查询路线</el-button>
               <el-button plain @click="openRouteCreate">新增路线</el-button>
             </div>
             <el-table :data="routePage.records" v-loading="loading.routes" stripe>
@@ -1366,16 +1503,35 @@ onMounted(async () => {
                 </template>
               </el-table-column>
             </el-table>
+            <el-pagination
+              v-model:current-page="routeQuery.pageNum"
+              v-model:page-size="routeQuery.pageSize"
+              class="table-pagination"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="routePage.total"
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleRouteSizeChange"
+              @current-change="handleRouteCurrentChange"
+            />
           </section>
         </el-tab-pane>
 
         <el-tab-pane label="空间要素" name="features">
           <section class="module">
             <div class="toolbar">
-              <el-button type="primary" plain @click="fetchFeatures">刷新要素</el-button>
+              <el-select v-model="featureQuery.scenicAreaId" placeholder="所属景区" clearable>
+                <el-option v-for="item in scenicOptions" :key="item.id" :label="item.scenicName" :value="item.id" />
+              </el-select>
+              <el-input v-model.trim="featureQuery.featureName" placeholder="按要素名称查询" clearable />
+              <el-select v-model="featureQuery.status" placeholder="状态" clearable>
+                <el-option label="启用" :value="1" />
+                <el-option label="停用" :value="0" />
+              </el-select>
+              <el-button type="primary" :loading="loading.features" @click="queryFeatures">查询要素</el-button>
               <el-button plain @click="openFeatureCreate">新增要素</el-button>
             </div>
-            <el-table :data="geoFeatureList" v-loading="loading.features" stripe>
+            <el-table :data="featurePage.records" v-loading="loading.features" stripe>
               <el-table-column prop="id" label="ID" min-width="70" />
               <el-table-column prop="featureName" label="要素名称" min-width="150" />
               <el-table-column label="要素类型" min-width="140">
@@ -1401,6 +1557,17 @@ onMounted(async () => {
                 </template>
               </el-table-column>
             </el-table>
+            <el-pagination
+              v-model:current-page="featureQuery.pageNum"
+              v-model:page-size="featureQuery.pageSize"
+              class="table-pagination"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="featurePage.total"
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleFeatureSizeChange"
+              @current-change="handleFeatureCurrentChange"
+            />
           </section>
         </el-tab-pane>
 
@@ -1893,6 +2060,11 @@ onMounted(async () => {
 
 .module>.toolbar {
   margin-bottom: 12px
+}
+
+.table-pagination {
+  margin-top: 14px;
+  justify-content: flex-end
 }
 
 .toolbar>.el-input,

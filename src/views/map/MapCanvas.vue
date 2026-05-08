@@ -366,9 +366,9 @@ function renderGeoFeatures() {
 }
 
 function renderRoutes() {
-  const visibleRouteIdSet = new Set((props.visibleRouteIds || []).map((item) => Number(item)))
+  const visibleRouteIdSet = new Set((props.visibleRouteIds || []).map((item) => String(item)))
   const routes = visibleRouteIdSet.size
-    ? (props.mapData?.routes || []).filter((route) => visibleRouteIdSet.has(Number(route.id)))
+    ? (props.mapData?.routes || []).filter((route) => visibleRouteIdSet.has(String(route.id)))
     : []
   const featureCollection = buildRouteFeatureCollection(routes)
   updateGeoJsonSource(ROUTE_SOURCE_ID, featureCollection)
@@ -378,7 +378,13 @@ function renderRoutes() {
     type: 'line',
     source: ROUTE_SOURCE_ID,
     paint: {
-      'line-color': '#f97316',
+      'line-color': [
+        'match',
+        ['get', 'routeType'],
+        'agent_custom',
+        '#7c3aed',
+        '#f97316',
+      ],
       'line-width': 4,
       'line-opacity': 0.92,
     },

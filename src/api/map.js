@@ -114,6 +114,10 @@ export function getMapInitApi(scenicAreaId) {
   return request.get(`/map/init/${scenicAreaId}`)
 }
 
+export function getLatestAgentRouteGeoApi(params) {
+  return request.get('/map/agent-route-geos/latest', { params })
+}
+
 export function createInteractionLogApi(data) {
   return request.post('/map/interaction-logs', data)
 }
