@@ -205,14 +205,11 @@ function buildPayload() {
 
   return {
     id: Number(form.id),
-    username: optionalText(form.username),
     password: optionalText(form.password),
     nickname: optionalText(form.nickname),
-    phone: optionalText(form.phone),
     email: optionalText(form.email),
     avatarUrl: optionalText(form.avatarUrl),
-    gender: form.gender === null || form.gender === '' ? undefined : Number(form.gender),
-    age: form.age === null || form.age === '' ? undefined : Number(form.age),
+    // 普通用户的账号、手机号、性别、年龄仅展示，不作为资料修改项提交。
     interestTags: stringifyInterestTags(form.interestTagsInput),
   }
 }
@@ -351,8 +348,12 @@ onMounted(() => {
 
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="handleSubmit">
         <div class="user-page__grid">
-          <el-form-item label="账号" prop="username">
+          <el-form-item v-if="isAdminUser" label="账号" prop="username">
             <el-input v-model.trim="form.username" size="large" disabled />
+          </el-form-item>
+
+          <el-form-item v-else label="手机号" prop="phone">
+            <el-input v-model.trim="form.phone" size="large" disabled />
           </el-form-item>
 
           <el-form-item label="新密码">
@@ -368,7 +369,7 @@ onMounted(() => {
             <el-input v-model.trim="form.nickname" size="large" clearable />
           </el-form-item>
 
-          <el-form-item label="手机号" prop="phone">
+          <el-form-item v-if="isAdminUser" label="手机号" prop="phone">
             <el-input v-model.trim="form.phone" size="large" clearable />
           </el-form-item>
 
@@ -385,14 +386,14 @@ onMounted(() => {
           </el-form-item>
 
           <el-form-item v-else label="性别">
-            <el-select v-model="form.gender" placeholder="请选择性别" size="large" clearable>
+            <el-select v-model="form.gender" placeholder="请选择性别" size="large" disabled>
               <el-option :value="1" label="男" />
               <el-option :value="2" label="女" />
             </el-select>
           </el-form-item>
 
           <el-form-item v-if="!isAdminUser" label="年龄" prop="age">
-            <el-input-number v-model="form.age" :min="0" :max="150" class="user-page__number" />
+            <el-input v-model="form.age" size="large" disabled />
           </el-form-item>
 
           <el-form-item label="头像地址" class="user-page__full">

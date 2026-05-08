@@ -31,7 +31,10 @@ defineProps({
   <div class="auth-shell">
     <section class="auth-shell__hero">
       <div class="auth-shell__copy glass-card">
-        <span class="auth-shell__eyebrow">{{ eyebrow }}</span>
+        <div class="auth-shell__topbar">
+          <span class="auth-shell__eyebrow">{{ eyebrow }}</span>
+          <slot name="hero-actions" />
+        </div>
         <h1 class="auth-shell__title">{{ title }}</h1>
         <p class="auth-shell__description">{{ description }}</p>
 
@@ -109,6 +112,15 @@ defineProps({
   bottom: -120px;
   left: -60px;
   background: rgba(14, 165, 233, 0.16);
+}
+
+.auth-shell__topbar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .auth-shell__eyebrow {
@@ -193,6 +205,13 @@ defineProps({
 
   .auth-shell__panel {
     padding: 28px 22px;
+  }
+}
+
+@media (max-width: 640px) {
+  .auth-shell__topbar {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

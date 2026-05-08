@@ -20,6 +20,14 @@ export function normalLoginApi(data) {
   return request.post('/user/normal/login', data)
 }
 
+export function sendNormalUserPhoneCodeApi(data) {
+  return request.post('/user/normal/code/send', data)
+}
+
+export function normalPhoneCodeLoginApi(data) {
+  return request.post('/user/normal/code/login', data)
+}
+
 export function verifyNormalUserRealNameApi(data) {
   return request.post('/user/normal/real-name/verify', data)
 }

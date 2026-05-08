@@ -11,12 +11,6 @@ const routes = [
     meta: { title: '普通用户登录', public: true },
   },
   {
-    path: '/normal/register',
-    name: 'NormalRegister',
-    component: () => import('@/views/auth/NormalRegister.vue'),
-    meta: { title: '普通用户注册', public: true },
-  },
-  {
     path: '/admin/login',
     name: 'AdminLogin',
     component: () => import('@/views/auth/AdminLogin.vue'),
