@@ -20,6 +20,10 @@ export function cancelReservationOrderApi(reservationNo, data) {
   return request.post(`/reservation/orders/${reservationNo}/cancel`, data)
 }
 
+export function enterReservationOrderApi(reservationNo) {
+  return request.post(`/reservation/admin/orders/${reservationNo}/enter`)
+}
+
 export function createReservationRuleApi(data) {
   return request.post('/reservation/admin/rules', data)
 }

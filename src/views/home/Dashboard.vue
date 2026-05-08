@@ -1,14 +1,12 @@
 <script setup>
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { pinia, useUserStore } from '@/stores'
-import { targetBaseUrl } from '@/utils/request'
 import AdminCreate from '@/views/user/AdminCreate.vue'
 import AdminUserDetail from '@/views/user/AdminUserDetail.vue'
 import AdminUserList from '@/views/user/AdminUserList.vue'
 import Chat from '@/views/chat/Chat-2.0.vue'
-import DashboardOverview from '@/views/overview/DashboardOverview.vue'
 import DailyReport from '@/views/report/DailyReport.vue'
 import NormalUserDetail from '@/views/user/NormalUserDetail.vue'
 import NormalUserList from '@/views/user/NormalUserList.vue'
@@ -24,21 +22,31 @@ const UserReservationDashboardScreen = defineAsyncComponent(
 
 const DEFAULT_AVATAR = '/default-avatar.svg'
 const MOBILE_BREAKPOINT = 1180
+const PUBLIC_MENU_KEYS = ['user-reservation-dashboard-screen', 'tourist-map']
 
+const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore(pinia)
 
-const activeMenu = ref('overview')
+const getDefaultMenuKey = () => {
+  const routeView = typeof route.query.view === 'string' ? route.query.view : ''
+  if (!userStore.isLoggedIn && PUBLIC_MENU_KEYS.includes(routeView)) return routeView
+  return userStore.isAdmin ? 'reservation-dashboard-screen' : 'user-reservation-dashboard-screen'
+}
+
+const activeMenu = ref(getDefaultMenuKey())
 const avatarLoadFailed = ref(false)
 const isCompactSidebar = ref(false)
 const isSidebarOpen = ref(false)
 
 const canUseAnalysis = computed(() => userStore.isSuperAdmin)
 const canUseUserManagement = computed(() => userStore.isAdmin)
-const canUseChat = computed(() => !userStore.isAdmin)
-const isAdminUser = computed(() => userStore.isAdmin)
-const isDashboardScreenActive = computed(() =>
+const isGuest = computed(() => !userStore.isLoggedIn)
+const isDashboardScreenMenu = computed(() =>
   ['reservation-dashboard-screen', 'user-reservation-dashboard-screen'].includes(activeMenu.value),
+)
+const isDashboardScreenActive = computed(() =>
+  userStore.isLoggedIn && isDashboardScreenMenu.value,
 )
 
 const roleLabel = computed(() => {
@@ -52,215 +60,101 @@ const avatarUrl = computed(() => {
   return userStore.userInfo?.avatarUrl || DEFAULT_AVATAR
 })
 
-const heroTitle = computed(() => {
-  if (userStore.isSuperAdmin) return '统一工作台'
-  if (userStore.isAdmin) return '管理工作台'
-  return '用户工作台'
+// 普通用户固定展示昵称，管理员按后台返回的 displayName 展示。
+const sidebarDisplayName = computed(() => {
+  if (userStore.isAdmin) return userStore.displayName || userStore.username || '未登录用户'
+  return userStore.userInfo?.nickname || userStore.username || '未登录用户'
 })
-
-const heroDescription = computed(() => {
-  if (userStore.isSuperAdmin) {
-    return '这里集成了概览、个人信息、聊天、日报、新增管理员和用户管理能力，便于你在一个控制台中完成主要业务操作。'
-  }
-
-  if (userStore.isAdmin) {
-    return '当前账号可以在同一工作台中切换聊天、个人信息和用户管理模块，查询管理员与普通用户数据。'
-  }
-
-  return '普通用户可以在这里维护个人资料、查看概览信息，并继续使用聊天功能。'
-})
-
-const heroAlert = computed(() => {
-  if (userStore.isSuperAdmin) {
-    return {
-      title: '当前账号拥有完整后台权限',
-      type: 'success',
-      description: '你可以直接使用聊天、日报管理、新增管理员和用户管理等全部能力。',
-    }
-  }
-
-  if (userStore.isAdmin) {
-    return {
-      title: '当前账号为管理员模式',
-      type: 'warning',
-      description: '你可以维护个人信息并查询用户数据，超管专属能力会自动按权限隐藏。',
-    }
-  }
-
-  return {
-    title: '当前账号为普通用户模式',
-    type: 'info',
-    description: '当前工作台已保留概览、个人信息和聊天功能，管理能力不会对普通用户开放。',
-  }
-})
-
-const userSummary = computed(() => [
-  { label: '当前身份', value: roleLabel.value },
-  { label: '角色标识', value: userStore.role || 'normal_user' },
-  { label: '展示名称', value: userStore.displayName || userStore.username || '-' },
-  { label: '最后登录时间', value: userStore.userInfo?.lastLoginTime || '暂无记录' },
-])
-
-const actionCards = computed(() => {
-  const cards = [
-    {
-      title: '维护个人信息',
-      description: '在工作台内直接修改头像、昵称、联系方式等资料。',
-      actionText: '打开修改信息',
-      actionKey: 'profile-edit',
-    },
-    {
-      title: '景区导游地图',
-      description: '面向游客端展示景区、景点、路线和地图说明，手机端优先适配。',
-      actionText: '打开导游地图',
-      actionKey: 'tourist-map',
-    },
-  ]
-
-  if (canUseChat.value) {
-    cards.splice(1, 0, {
-      title: '进入智能问答',
-      description: '在工作台内直接打开聊天页面。',
-      actionText: '打开聊天',
-      actionKey: 'chat-page',
-    })
-  }
-
-  if (canUseUserManagement.value) {
-    cards.push({
-      title: '查看用户管理',
-      description: '支持管理员详情、普通用户详情和两类分页列表查询。',
-      actionText: '打开用户管理',
-      actionKey: 'user-admin-list',
-    })
-
-    cards.push({
-      title: '景区地图联调',
-      description: '进入景区、景点、路线和地图初始化的一体化业务控制台。',
-      actionText: '打开景区管理',
-      actionKey: 'map-workspace',
-    })
-  }
-
-  if (canUseAnalysis.value) {
-    cards.push({
-      title: '打开日报管理',
-      description: '在同一页面里完成日报生成和结果查看。',
-      actionText: '打开日报管理',
-      actionKey: 'daily-report',
-    })
-  }
-
-  if (userStore.isSuperAdmin) {
-    cards.push({
-      title: '新增管理员',
-      description: '在工作台内直接打开管理员创建页面。',
-      actionText: '打开新增管理员',
-      actionKey: 'admin-create-page',
-    })
-  }
-
-  return cards
-})
-
-const capabilityList = computed(() => {
-  if (userStore.isSuperAdmin) {
-    return [
-      '左侧菜单支持切换概览、修改信息、聊天、日报、新增管理员和用户管理。',
-      '用户管理下提供管理员详情、普通用户详情、管理员分页和普通用户分页查询。',
-      '左上角用户区域可以直接进入修改信息，不需要跳转新页面。',
-    ]
-  }
-
-  if (userStore.isAdmin) {
-    return [
-      '可以维护当前账号资料，并实时同步头像和昵称。',
-      '可以查询管理员与普通用户详情，并查看分页列表。',
-      '可以进入景区地图业务控制台，联调景区、景点、路线、空间要素和交互日志。',
-      '超管专属能力会根据权限自动隐藏。',
-    ]
-  }
-
-  return [
-    '可以修改当前账号资料。',
-    '可以继续使用聊天功能。',
-    '用户管理和超管能力不会对普通用户开放。',
-  ]
-})
-
-const apiNotes = computed(() => [
-  `当前服务地址：${targetBaseUrl}`,
-  '聊天接口：/agent/chat',
-  '用户管理接口前缀：/user',
-])
+// 首页默认进入数据页面，管理员和普通用户使用各自的数据大屏。
+const defaultMenuKey = computed(() =>
+  userStore.isAdmin ? 'reservation-dashboard-screen' : 'user-reservation-dashboard-screen',
+)
 
 const menuItems = computed(() => {
-  const items = [
-    { key: 'overview', label: '概览' },
-  ]
-
-  if (canUseChat.value) {
-    items.push({ key: 'chat-page', label: '智能问答' })
+  if (isGuest.value) {
+    return [
+      { key: 'user-reservation-dashboard-screen', label: '数据大屏' },
+      { key: 'tourist-map', label: '导游地图' },
+    ]
   }
+
+  if (!userStore.isAdmin) {
+    return [
+      { key: 'user-reservation-dashboard-screen', label: '数据大屏' },
+      { key: 'tourist-map', label: '导游地图' },
+      { key: 'reservation-workspace', label: '景点预约' },
+      { key: 'chat-page', label: '智能问答' },
+    ]
+  }
+
+  const items = [
+    { key: 'reservation-dashboard-screen', label: '数据大屏' },
+  ]
 
   if (canUseAnalysis.value) {
     items.push({ key: 'daily-report', label: '日报管理' })
-    items.push({ key: 'admin-create-page', label: '新增管理员' })
   }
+
+  items.push({ key: 'tourist-map', label: '导游地图' })
 
   if (canUseUserManagement.value) {
-    items.push({ key: 'reservation-dashboard-screen', label: '数据看板' })
-
-    items.push({
-      key: 'scenic-management',
-      label: '景区管理',
-      children: [
-        { key: 'map-workspace', label: '地图业务控制台' },
-      ],
-    })
-
-    items.push({
-      key: 'user-management',
-      label: '用户管理',
-      children: [
-        { key: 'user-admin-detail', label: '管理员详情查询' },
-        { key: 'user-normal-detail', label: '普通用户详情查询' },
-        { key: 'user-admin-list', label: '管理员分页列表' },
-        { key: 'user-normal-list', label: '普通用户分页列表' },
-      ],
-    })
-  }
-
-  items.splice(2, 0, { key: 'tourist-map', label: '导游地图' })
-  items.splice(3, 0, { key: 'reservation-workspace', label: userStore.isAdmin ? '预约管理' : '景点预约' })
-  if (!userStore.isAdmin) {
-    items.splice(4, 0, { key: 'user-reservation-dashboard-screen', label: '预约状态' })
+    items.push(
+      {
+        key: 'scenic-management',
+        label: '景区管理',
+        children: [
+          { key: 'map-workspace', label: '地图业务控制台' },
+          { key: 'reservation-workspace', label: '预约管理' },
+        ],
+      },
+      {
+        key: 'user-management',
+        label: '用户管理',
+        children: [
+          ...(canUseAnalysis.value ? [{ key: 'admin-create-page', label: '新增管理员' }] : []),
+          { key: 'user-admin-detail', label: '管理员详情查询' },
+          { key: 'user-normal-detail', label: '普通用户详情查询' },
+          { key: 'user-admin-list', label: '管理员分页列表' },
+          { key: 'user-normal-list', label: '普通用户分页列表' },
+        ],
+      },
+    )
   }
 
   return items
 })
 
-const extraViewItems = [{ key: 'profile-edit', label: '修改信息' }]
+const extraViewItems = computed(() => (isGuest.value ? [] : [{ key: 'profile-edit', label: '修改信息' }]))
 
 const flatMenuItems = computed(() =>
-  [...menuItems.value, ...extraViewItems].flatMap((item) => (item.children?.length ? item.children : [item])),
+  [...menuItems.value, ...extraViewItems.value].flatMap((item) => (item.children?.length ? item.children : [item])),
 )
 
 const currentMenuLabel = computed(() => {
-  return flatMenuItems.value.find((item) => item.key === activeMenu.value)?.label || '概览'
+  return flatMenuItems.value.find((item) => item.key === activeMenu.value)?.label || '数据大屏'
 })
 
 watch(
   menuItems,
   (items) => {
-    const availableKeys = [...items, ...extraViewItems].flatMap((item) =>
+    const availableKeys = [...items, ...extraViewItems.value].flatMap((item) =>
       item.children?.length ? item.children : [item],
     )
     if (!availableKeys.some((item) => item.key === activeMenu.value)) {
-      activeMenu.value = availableKeys[0]?.key || 'overview'
+      const defaultItem = availableKeys.find((item) => item.key === defaultMenuKey.value)
+      activeMenu.value = defaultItem?.key || availableKeys[0]?.key || defaultMenuKey.value
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => route.query.view,
+  (view) => {
+    if (typeof view === 'string' && flatMenuItems.value.some((item) => item.key === view)) {
+      activeMenu.value = view
+    }
+  },
 )
 
 watch(
@@ -297,10 +191,22 @@ function handleAvatarError() {
 }
 
 function handleProfileEdit() {
+  if (isGuest.value) {
+    handleLogin()
+    return
+  }
+
   activeMenu.value = 'profile-edit'
   if (isCompactSidebar.value) {
     isSidebarOpen.value = false
   }
+}
+
+function handleLogin() {
+  router.push({
+    path: '/normal/login',
+    query: { redirect: route.fullPath },
+  })
 }
 
 async function handleLogout() {
@@ -353,29 +259,35 @@ onBeforeUnmount(() => {
         'dashboard-sidebar--open': isCompactSidebar && isSidebarOpen,
       }">
         <div class="dashboard-user">
-          <div class="dashboard-user__top">
+          <div v-if="!isGuest" class="dashboard-user__top">
             <div class="dashboard-user__avatar">
               <img :src="avatarUrl" alt="用户头像" @error="handleAvatarError" />
             </div>
 
             <div class="dashboard-user__meta">
-              <strong>{{ userStore.displayName || userStore.username || '未登录用户' }}</strong>
+              <strong>{{ sidebarDisplayName }}</strong>
               <span>{{ userStore.username || '-' }}</span>
             </div>
           </div>
 
-          <div class="dashboard-user__identity">
+          <div v-if="!isGuest" class="dashboard-user__identity">
             <span>身份信息</span>
             <strong>{{ roleLabel }}</strong>
           </div>
 
-          <div class="dashboard-user__actions">
+          <div v-if="!isGuest" class="dashboard-user__actions">
             <el-button class="dashboard-user__action" round @click="handleProfileEdit">
               修改信息
             </el-button>
             <el-button class="dashboard-user__logout" round @click="handleLogout">
               退出登录
             </el-button>
+          </div>
+
+          <div v-else class="dashboard-guest">
+            <strong>游客模式</strong>
+            <span>可查看数据大屏和导游地图</span>
+            <el-button type="primary" round @click="handleLogin">去登录</el-button>
           </div>
         </div>
 
@@ -428,15 +340,9 @@ onBeforeUnmount(() => {
 
         <div class="dashboard-content__body" :class="{
           'dashboard-content__body--map': activeMenu === 'tourist-map',
-          'dashboard-content__body--screen': isDashboardScreenActive,
+          'dashboard-content__body--screen': isDashboardScreenMenu,
         }">
-          <DashboardOverview v-if="activeMenu === 'overview'" :target-base-url="targetBaseUrl"
-            :username="userStore.username" :display-name="userStore.displayName" :role-label="roleLabel"
-            :hero-title="heroTitle" :hero-description="heroDescription" :hero-alert="heroAlert"
-            :can-use-analysis="canUseAnalysis" :user-summary="userSummary" :action-cards="actionCards"
-            :capability-list="capabilityList" :api-notes="apiNotes" @navigate="handleActionNavigate" />
-
-          <UserProfileEdit v-else-if="activeMenu === 'profile-edit'" />
+          <UserProfileEdit v-if="activeMenu === 'profile-edit'" />
 
           <Chat v-else-if="activeMenu === 'chat-page'" embedded @navigate="handleActionNavigate" />
 
@@ -500,7 +406,7 @@ onBeforeUnmount(() => {
   gap: 18px;
   min-height: 0;
   padding: 22px;
-  border-radius: 24px;
+  border-radius: 0;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 118, 110, 0.94));
   color: #f8fafc;
   overflow: hidden;
@@ -577,6 +483,22 @@ onBeforeUnmount(() => {
 
 .dashboard-user__actions :deep(.el-button + .el-button) {
   margin-left: 0;
+}
+
+.dashboard-guest {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-guest strong {
+  color: #ffffff;
+  font-size: 18px;
+}
+
+.dashboard-guest span {
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .dashboard-user__action,
@@ -758,7 +680,8 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-content__body--screen {
-  overflow: auto;
+  /* 数据大屏组件内部已经负责滚动，外层隐藏滚动避免出现双重滚动条。 */
+  overflow: hidden;
   padding: 0;
 }
 

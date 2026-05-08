@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowDown,
+  ChatDotRound,
   Clock,
   Flag,
   Location,
@@ -12,12 +13,15 @@ import {
   Tickets,
 } from '@element-plus/icons-vue'
 import { getMapInitApi, pageScenicAreasApi } from '@/api/map'
+import { pinia, useUserStore } from '@/stores'
 import MapCanvas from './MapCanvas.vue'
 import UserMapControls from './UserMapControls.vue'
 import { normalizePageResult } from './mapUtils'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore(pinia)
+const SCENIC_NAME_CACHE_KEY = 'wanlv:scenic-area-name-cache'
 
 const scenicOptions = ref([])
 const selectedScenicId = ref(null)
@@ -65,11 +69,40 @@ const mapLegendItems = [
   { label: '服务通道', type: 'line', className: 'tourist-map__line--service' },
 ]
 
+function readScenicNameCache() {
+  try {
+    return JSON.parse(localStorage.getItem(SCENIC_NAME_CACHE_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function cacheScenicNames(rows = []) {
+  const nextCache = readScenicNameCache()
+  rows.forEach((item) => {
+    if (item?.id && item?.scenicName) {
+      nextCache[String(item.id)] = item.scenicName
+    }
+  })
+  localStorage.setItem(SCENIC_NAME_CACHE_KEY, JSON.stringify(nextCache))
+}
+
+function getSelectedScenicName(id = selectedScenicId.value) {
+  return (
+    scenicOptions.value.find((item) => Number(item.id) === Number(id))?.scenicName ||
+    scenicArea.value?.scenicName ||
+    readScenicNameCache()[String(id)] ||
+    ''
+  )
+}
+
 function syncRouteQuery(id) {
+  const scenicName = getSelectedScenicName(id)
   router.replace({
     query: {
       ...route.query,
       scenicAreaId: id || undefined,
+      scenicAreaName: scenicName || undefined,
     },
   })
 }
@@ -80,6 +113,7 @@ async function fetchScenicOptions() {
     const result = await pageScenicAreasApi({ current: 1, size: 100, status: 1 })
     const page = normalizePageResult(result)
     scenicOptions.value = page.records
+    cacheScenicNames(page.records)
 
     const queryId = Number(route.query.scenicAreaId)
     const firstId = queryId || page.records[0]?.id
@@ -98,6 +132,8 @@ async function fetchMapData() {
   selectedSpot.value = null
   try {
     mapData.value = await getMapInitApi(Number(selectedScenicId.value))
+    cacheScenicNames([mapData.value?.scenicArea])
+    syncRouteQuery(selectedScenicId.value)
     visibleRouteIds.value = officialRoutes.value.filter(hasRouteGeojson).map((item) => item.id).filter(Boolean).slice(0, 2)
     await nextTick()
     mapCanvasRef.value?.resize()
@@ -112,6 +148,35 @@ async function fetchMapData() {
 function handleScenicChange(value) {
   selectedScenicId.value = value
   syncRouteQuery(value)
+}
+
+function handleAskAi() {
+  const scenicAreaId = Number(selectedScenicId.value)
+  if (!Number.isFinite(scenicAreaId) || scenicAreaId <= 0) {
+    ElMessage.warning('请先选择景区，再进入智能问答。')
+    return
+  }
+
+  const target = {
+    path: '/chat',
+    query: {
+      scenicAreaId,
+      scenicAreaName: getSelectedScenicName(scenicAreaId) || undefined,
+    },
+  }
+
+  // 游客点击智能问答时先去登录，登录成功后再带着景区上下文回到问答页。
+  if (!userStore.isLoggedIn) {
+    router.push({
+      path: '/normal/login',
+      query: {
+        redirect: router.resolve(target).fullPath,
+      },
+    })
+    return
+  }
+
+  router.push(target)
 }
 
 function handleSpotClick(id) {
@@ -245,6 +310,13 @@ onMounted(fetchScenicOptions)
           <span><el-icon><Place /></el-icon>{{ spots.length }} 个景点</span>
           <span><el-icon><Flag /></el-icon>{{ routes.length }} 条路线</span>
           <span><el-icon><Tickets /></el-icon>{{ geoFeatures.length }} 个要素</span>
+        </div>
+
+        <div class="tourist-map__actions">
+          <el-button type="primary" round @click="handleAskAi">
+            <el-icon><ChatDotRound /></el-icon>
+            咨询智能问答
+          </el-button>
         </div>
 
         <p class="tourist-map__description">
@@ -516,6 +588,16 @@ onMounted(fetchScenicOptions)
   color: #334155;
   font-size: 12px;
   white-space: nowrap;
+}
+
+.tourist-map__actions {
+  display: flex;
+  margin-top: 14px;
+}
+
+.tourist-map__actions :deep(.el-button) {
+  width: 100%;
+  justify-content: center;
 }
 
 .tourist-map__description {

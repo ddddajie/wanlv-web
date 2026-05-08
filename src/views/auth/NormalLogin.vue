@@ -21,6 +21,13 @@ const rules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
+function enterGuestView(view) {
+  router.push({
+    path: '/dashboard',
+    query: { view },
+  })
+}
+
 async function handleSubmit() {
   await formRef.value.validate()
   loading.value = true
@@ -88,6 +95,15 @@ async function handleSubmit() {
       <router-link to="/normal/register">还没有账号？去注册</router-link>
       <router-link to="/admin/login">管理员入口</router-link>
     </div>
+
+    <div class="guest-entry">
+      <el-button plain size="large" @click="enterGuestView('user-reservation-dashboard-screen')">
+        游客查看数据大屏
+      </el-button>
+      <el-button plain size="large" @click="enterGuestView('tourist-map')">
+        游客查看导游地图
+      </el-button>
+    </div>
   </AuthShell>
 </template>
 
@@ -106,5 +122,22 @@ async function handleSubmit() {
   color: #0f766e;
   font-size: 14px;
   font-weight: 600;
+}
+
+.guest-entry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.guest-entry :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+@media (max-width: 520px) {
+  .guest-entry {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

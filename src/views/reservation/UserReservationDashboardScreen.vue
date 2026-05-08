@@ -325,7 +325,7 @@ function refreshDashboard() {
 }
 
 function backToConsole() {
-  emit('navigate', 'overview')
+  emit('navigate', 'tourist-map')
 }
 
 function formatDate(date = new Date()) {
@@ -399,10 +399,11 @@ watch([selectedScenicAreaId, selectedDate], () => {
   <section class="user-reservation-screen" v-loading="loading.scenic || loading.dashboard">
     <header class="screen-hero">
       <div class="hero-topline">
-        <button type="button" class="icon-button" aria-label="返回控制台" @click="backToConsole">
+        <button type="button" class="icon-button system-entry-button" aria-label="进入系统" @click="backToConsole">
           <el-icon>
             <ArrowLeft />
           </el-icon>
+          <span>进入系统</span>
         </button>
         <div>
           <p>预约状态</p>
@@ -601,6 +602,17 @@ watch([selectedScenicAreaId, selectedDate], () => {
   font-size: 18px;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   cursor: pointer;
+}
+
+.system-entry-button {
+  display: inline-flex;
+  gap: 6px;
+  width: auto;
+  min-width: 104px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .icon-button--primary {

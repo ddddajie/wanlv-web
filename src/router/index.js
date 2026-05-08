@@ -70,6 +70,8 @@ const router = createRouter({
   routes,
 })
 
+const guestAllowedPaths = new Set(['/dashboard', '/tourist-map'])
+
 router.beforeEach((to, from, next) => {
   const userStore = useUserStore(pinia)
   const isPublic = to.matched.some((record) => record.meta?.public)
@@ -88,7 +90,8 @@ router.beforeEach((to, from, next) => {
     return
   }
 
-  if (requiresAuth && !userStore.isLoggedIn) {
+  // 游客可直接查看导游地图和用户端数据大屏，其它功能仍然要求登录。
+  if (requiresAuth && !userStore.isLoggedIn && !guestAllowedPaths.has(to.path)) {
     next({
       path: loginType === 'admin' ? '/admin/login' : '/normal/login',
       query: { redirect: to.fullPath },

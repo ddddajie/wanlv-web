@@ -2,7 +2,13 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { pageScenicAreasApi } from '@/api/map'
-import { getAdminUserApi, getNormalUserApi, updateAdminUserApi, updateNormalUserApi } from '@/api/user'
+import {
+  getAdminUserApi,
+  getNormalUserApi,
+  updateAdminUserApi,
+  updateNormalUserApi,
+  verifyNormalUserRealNameApi,
+} from '@/api/user'
 import { pinia, useUserStore } from '@/stores'
 import {
   buildDisplayName,
@@ -13,8 +19,10 @@ import {
 
 const userStore = useUserStore(pinia)
 const formRef = ref()
+const realNameFormRef = ref()
 const loading = ref(false)
 const profileLoading = ref(false)
+const realNameLoading = ref(false)
 const scenicLoading = ref(false)
 const scenicOptions = ref([])
 
@@ -52,6 +60,11 @@ const form = reactive({
   interestTagsInput: '',
 })
 
+const realNameForm = reactive({
+  realName: '',
+  idCardNo: '',
+})
+
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   phone: [
@@ -83,6 +96,31 @@ const rules = {
   ],
 }
 
+const realNameRules = {
+  realName: [{ required: true, message: '请输入真实姓名', trigger: 'blur' }],
+  idCardNo: [
+    { required: true, message: '请输入身份证号', trigger: 'blur' },
+    {
+      validator(rule, value, callback) {
+        if (/^\d{17}[\dXx]$/.test(String(value || '').trim())) {
+          callback()
+          return
+        }
+
+        callback(new Error('请输入正确的身份证号'))
+      },
+      trigger: 'blur',
+    },
+  ],
+}
+
+const realNameStatusMeta = computed(() => {
+  const status = Number(userInfo.value.realNameStatus ?? 0)
+  if (status === 1) return { label: '已实名', type: 'success' }
+  if (status === 2) return { label: '实名失败', type: 'danger' }
+  return { label: '未实名', type: 'warning' }
+})
+
 function syncForm(source) {
   form.id = source?.id ?? ''
   form.username = source?.username ?? ''
@@ -97,6 +135,8 @@ function syncForm(source) {
   form.gender = source?.gender ?? null
   form.age = source?.age ?? null
   form.interestTagsInput = parseInterestTags(source?.interestTags).join('，')
+  realNameForm.realName = source?.realName ?? ''
+  realNameForm.idCardNo = ''
 }
 
 function optionalText(value) {
@@ -203,6 +243,35 @@ async function handleSubmit() {
   }
 }
 
+async function handleRealNameVerify() {
+  if (isAdminUser.value) return
+  await realNameFormRef.value.validate()
+  realNameLoading.value = true
+
+  try {
+    // 身份证号只在认证提交时传给后端，成功或失败后不写入用户资料表单。
+    const verifiedUser = await verifyNormalUserRealNameApi({
+      userId: Number(form.id || userStore.userId),
+      realName: optionalText(realNameForm.realName),
+      idCardNo: realNameForm.idCardNo.trim(),
+    })
+
+    userStore.patchUserInfo({
+      ...verifiedUser,
+      displayName: buildDisplayName(verifiedUser),
+    })
+    syncForm({
+      ...userStore.userInfo,
+      ...verifiedUser,
+    })
+    realNameFormRef.value?.clearValidate()
+    ElMessage.success('实名认证已完成')
+  } finally {
+    realNameForm.idCardNo = ''
+    realNameLoading.value = false
+  }
+}
+
 function handleReset() {
   syncForm(userInfo.value)
   formRef.value?.clearValidate()
@@ -224,6 +293,52 @@ onMounted(() => {
 
 <template>
   <div class="user-page">
+    <el-card v-if="!isAdminUser" shadow="never" class="user-page__card" v-loading="profileLoading">
+      <template #header>
+        <div class="user-page__card-head">
+          <span>实名认证</span>
+          <el-tag effect="plain" :type="realNameStatusMeta.type">
+            {{ realNameStatusMeta.label }}
+          </el-tag>
+        </div>
+      </template>
+
+      <div class="real-name-summary">
+        <div>
+          <span>真实姓名</span>
+          <strong>{{ userInfo.realName || '暂无' }}</strong>
+        </div>
+        <div>
+          <span>证件号码</span>
+          <strong>{{ userInfo.idCardMasked || '认证后展示脱敏号码' }}</strong>
+        </div>
+        <div>
+          <span>认证时间</span>
+          <strong>{{ userInfo.realNameTime ? userInfo.realNameTime.replace('T', ' ') : '暂无' }}</strong>
+        </div>
+      </div>
+
+      <el-form ref="realNameFormRef" :model="realNameForm" :rules="realNameRules" label-position="top"
+        @submit.prevent="handleRealNameVerify">
+        <div class="user-page__grid">
+          <el-form-item label="真实姓名" prop="realName">
+            <el-input v-model.trim="realNameForm.realName" size="large" :disabled="userStore.isRealNameVerified"
+              clearable />
+          </el-form-item>
+          <el-form-item label="身份证号" prop="idCardNo">
+            <el-input v-model.trim="realNameForm.idCardNo" size="large" placeholder="仅用于本次认证提交" clearable
+              :disabled="userStore.isRealNameVerified" />
+          </el-form-item>
+        </div>
+        <div class="user-page__actions">
+          <el-button type="primary" size="large" :loading="realNameLoading" :disabled="userStore.isRealNameVerified"
+            @click="handleRealNameVerify">
+            {{ userStore.isRealNameVerified ? '已完成认证' : '提交认证' }}
+          </el-button>
+        </div>
+      </el-form>
+    </el-card>
+
     <el-card shadow="never" class="user-page__card" v-loading="profileLoading">
       <template #header>
         <div class="user-page__card-head">
@@ -390,6 +505,33 @@ onMounted(() => {
   gap: 8px 16px;
 }
 
+.real-name-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.real-name-summary div {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.real-name-summary span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.real-name-summary strong {
+  color: #0f172a;
+  font-size: 15px;
+  word-break: break-word;
+}
+
 .user-page__full {
   grid-column: 1 / -1;
 }
@@ -408,7 +550,8 @@ onMounted(() => {
 @media (max-width: 1080px) {
 
   .user-page__hero,
-  .user-page__grid {
+  .user-page__grid,
+  .real-name-summary {
     grid-template-columns: 1fr;
   }
 }

@@ -408,7 +408,7 @@ function refreshDashboard() {
 }
 
 function backToConsole() {
-  emit('navigate', 'overview')
+  emit('navigate', 'tourist-map')
 }
 
 function formatDate(date = new Date()) {
@@ -525,7 +525,7 @@ watch([selectedScenicAreaId, selectedDate], () => {
           <el-icon>
             <ArrowLeft />
           </el-icon>
-          <span>返回控制台</span>
+          <span>进入系统</span>
         </el-button>
 
         <el-button class="refresh-button" size="large" :loading="loading" @click="refreshDashboard">

@@ -20,6 +20,10 @@ export function normalLoginApi(data) {
   return request.post('/user/normal/login', data)
 }
 
+export function verifyNormalUserRealNameApi(data) {
+  return request.post('/user/normal/real-name/verify', data)
+}
+
 export function updateAdminUserApi(data) {
   return request.put('/user/admin/update', data)
 }

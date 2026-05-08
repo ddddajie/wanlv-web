@@ -13,6 +13,8 @@ export const useUserStore = defineStore('wanlv-user', {
     role: (state) => state.userInfo?.role ?? '',
     userType: (state) => state.userInfo?.userType ?? '',
     isAdmin: (state) => state.userInfo?.userType === 'admin',
+    realNameStatus: (state) => Number(state.userInfo?.realNameStatus ?? 0),
+    isRealNameVerified: (state) => Number(state.userInfo?.realNameStatus ?? 0) === 1,
     isSuperAdmin: (state) =>
       state.userInfo?.userType === 'admin' && state.userInfo?.role === 'super_admin',
   },

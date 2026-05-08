@@ -27,6 +27,7 @@ const BASE_CHAR_INTERVAL = 185
 const FINISHED_HIDE_DELAY = 900
 const MOBILE_BREAKPOINT = 768
 const DIGITAL_HUMAN_AVATAR_STORAGE_KEY = 'wanlv:selected-digital-human-avatar'
+const SCENIC_NAME_CACHE_KEY = 'wanlv:scenic-area-name-cache'
 
 const digitalHumanAvatars = [
   {
@@ -92,10 +93,19 @@ const toPositiveNumber = (value) => {
   return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : null
 }
 
+const readScenicNameCache = () => {
+  try {
+    return JSON.parse(localStorage.getItem(SCENIC_NAME_CACHE_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
 const currentUserId = computed(() => toPositiveNumber(userStore.userId))
 const routeScenicAreaId = computed(() => toPositiveNumber(route.query.scenicAreaId))
 const routeScenicAreaName = computed(() =>
-  typeof route.query.scenicAreaName === 'string' ? route.query.scenicAreaName.trim() : '',
+  (typeof route.query.scenicAreaName === 'string' ? route.query.scenicAreaName.trim() : '') ||
+  (routeScenicAreaId.value ? readScenicNameCache()[String(routeScenicAreaId.value)] || '' : ''),
 )
 const statusText = computed(() => ({ connected: '已连接', connecting: '连接中...', disconnected: '未连接' }[connectionStatus.value] || '未连接'))
 const statusType = computed(() => ({ connected: 'success', connecting: 'warning', disconnected: 'info' }[connectionStatus.value] || 'info'))

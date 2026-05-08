@@ -3,11 +3,13 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { pinia, useUserStore } from '@/stores'
 import { pageScenicAreasApi } from '@/api/map'
+import { getNormalUserApi } from '@/api/user'
 import {
   cancelReservationOrderApi,
   createReservationOrderApi,
   createReservationRuleApi,
   createReservationSlotApi,
+  enterReservationOrderApi,
   generateReservationSlotsApi,
   listReservationEnabledSpotsApi,
   listReservationSlotsApi,
@@ -44,6 +46,7 @@ const editingSlotId = ref(null)
 const reserveFormVisible = ref(false)
 const ruleFormVisible = ref(false)
 const slotFormVisible = ref(false)
+const enteringReservationNo = ref('')
 
 const loading = reactive({
   scenic: false,
@@ -59,6 +62,7 @@ const loading = reactive({
   rules: false,
   adminSlots: false,
   adminOrders: false,
+  profile: false,
 })
 
 const submitting = reactive({
@@ -78,11 +82,11 @@ const reserveQuery = reactive({
 })
 
 const orderForm = reactive({
-  visitorCount: 1,
   contactName: '',
   contactPhone: '',
   remark: '',
 })
+const visitorForms = ref([])
 
 const myOrderQuery = reactive({
   status: '',
@@ -152,10 +156,14 @@ const adminOrderQuery = reactive({
 
 const canReserve = computed(() => !userStore.isAdmin)
 const canManage = computed(() => userStore.isAdmin)
+const isRealNameVerified = computed(() => Number(userStore.userInfo?.realNameStatus ?? 0) === 1)
 const selectedSpot = computed(() =>
   enabledSpots.value.find((item) => Number(item.spotId || item.id) === Number(reserveQuery.spotId)),
 )
 const availableSlots = computed(() => slotResult.value?.slots || [])
+const visitorLimit = computed(() => Math.min(Number(selectedSlot.value?.remainingCount || 5), 5))
+const visitorCount = computed(() => visitorForms.value.length)
+const bookerIdCardMasked = computed(() => userStore.userInfo?.idCardMasked || '')
 const reserveSpotRows = computed(() => {
   if (!reserveQuery.spotId) return enabledSpots.value
   return enabledSpots.value.filter((item) => Number(getSpotValue(item)) === Number(reserveQuery.spotId))
@@ -188,6 +196,7 @@ const slotFormSpotOptions = computed(() => {
 const statusOptions = [
   { label: '待确认', value: 'PENDING' },
   { label: '已预约', value: 'CONFIRMED' },
+  { label: '已入园', value: 'ENTERED' },
   { label: '已取消', value: 'CANCELLED' },
   { label: '已完成', value: 'COMPLETED' },
   { label: '已过期', value: 'EXPIRED' },
@@ -240,7 +249,7 @@ function statusTagType(status) {
   if (status === 'CONFIRMED') return 'success'
   if (status === 'PENDING') return 'warning'
   if (status === 'CANCELLED') return 'info'
-  if (status === 'COMPLETED') return 'primary'
+  if (['ENTERED', 'COMPLETED'].includes(status)) return 'primary'
   return 'danger'
 }
 
@@ -250,11 +259,151 @@ function statusText(value) {
 
 function resetOrderForm() {
   Object.assign(orderForm, {
-    visitorCount: 1,
     contactName: userStore.displayName || '',
     contactPhone: userStore.userInfo?.phone || '',
     remark: '',
   })
+  resetVisitorForms()
+}
+
+function createBookerVisitor() {
+  return {
+    realName: userStore.userInfo?.realName || '',
+    idCardNo: '',
+    booker: true,
+  }
+}
+
+function resetVisitorForms() {
+  visitorForms.value = [createBookerVisitor()]
+}
+
+function addVisitor() {
+  if (visitorForms.value.length >= 5) {
+    ElMessage.warning('单次预约最多 5 名游客')
+    return
+  }
+  if (visitorForms.value.length >= visitorLimit.value) {
+    ElMessage.warning('入园人数不能超过当前时段剩余名额')
+    return
+  }
+
+  visitorForms.value.push({
+    realName: '',
+    idCardNo: '',
+    booker: false,
+  })
+}
+
+function removeVisitor(index) {
+  if (visitorForms.value[index]?.booker) {
+    ElMessage.warning('预约本人不能删除')
+    return
+  }
+
+  visitorForms.value.splice(index, 1)
+}
+
+function normalizeIdCard(value) {
+  return String(value || '').trim().toUpperCase()
+}
+
+// 预约提交前先做实名与入园人校验，减少后端拒单后的重复填写。
+function validateVisitors() {
+  if (!isRealNameVerified.value) {
+    ElMessage.warning('请先在个人中心完成实名认证后再预约')
+    return false
+  }
+  if (!visitorForms.value.length) {
+    ElMessage.warning('请至少填写 1 名入园人')
+    return false
+  }
+  if (visitorForms.value.length > 5) {
+    ElMessage.warning('单次预约最多 5 名游客')
+    return false
+  }
+  if (visitorForms.value.length > visitorLimit.value) {
+    ElMessage.warning('入园人数不能超过当前时段剩余名额')
+    return false
+  }
+
+  const bookers = visitorForms.value.filter((item) => item.booker)
+  if (bookers.length !== 1) {
+    ElMessage.warning('必须且只能有一名入园人标记为预约本人')
+    return false
+  }
+
+  const seenIdCards = new Set()
+  for (const [index, visitor] of visitorForms.value.entries()) {
+    const realName = String(visitor.realName || '').trim()
+    const idCardNo = normalizeIdCard(visitor.idCardNo)
+    if (!realName) {
+      ElMessage.warning(`请完整填写第 ${index + 1} 名入园人的姓名`)
+      return false
+    }
+    if (visitor.booker && !idCardNo && visitorForms.value.length === 1 && bookerIdCardMasked.value) {
+      continue
+    }
+    if (!idCardNo) {
+      ElMessage.warning(`请完整填写第 ${index + 1} 名入园人的姓名和身份证号`)
+      return false
+    }
+    if (!/^\d{17}[\dX]$/.test(idCardNo)) {
+      ElMessage.warning(`第 ${index + 1} 名入园人的身份证号格式不正确`)
+      return false
+    }
+    if (seenIdCards.has(idCardNo)) {
+      ElMessage.warning('同一预约单不能重复填写同一身份证号')
+      return false
+    }
+    seenIdCards.add(idCardNo)
+  }
+
+  return true
+}
+
+function buildVisitorsPayload() {
+  if (
+    visitorForms.value.length === 1 &&
+    visitorForms.value[0]?.booker &&
+    !normalizeIdCard(visitorForms.value[0]?.idCardNo)
+  ) {
+    return undefined
+  }
+
+  return visitorForms.value.map((item) => ({
+    realName: String(item.realName || '').trim(),
+    idCardNo: normalizeIdCard(item.idCardNo),
+    booker: Boolean(item.booker),
+  }))
+}
+
+function clearVisitorIdCards() {
+  // 身份证号只用于本次提交，弹窗关闭或提交结束后立即清空。
+  visitorForms.value.forEach((item) => {
+    item.idCardNo = ''
+  })
+}
+
+function formatVisitorText(visitor) {
+  return `${visitor.realName || '-'} ${visitor.idCardMasked || ''}`.trim()
+}
+
+function visitorStatusTagType(status) {
+  return statusTagType(status || 'CONFIRMED')
+}
+
+async function fetchCurrentNormalUserDetail() {
+  if (!canReserve.value || !Number(userStore.userId)) return
+
+  loading.profile = true
+  try {
+    const detail = await getNormalUserApi(Number(userStore.userId))
+    userStore.patchUserInfo(detail)
+    resetVisitorForms()
+  } finally {
+    loading.profile = false
+  }
 }
 
 async function fetchScenicOptions() {
@@ -482,8 +631,15 @@ function chooseSlot(slot) {
   selectedSlot.value = slot
 }
 
-function openReserveForm(row) {
+async function openReserveForm(row) {
   if (row) reserveQuery.spotId = getSpotValue(row)
+  if (!userStore.userInfo?.realName) {
+    await fetchCurrentNormalUserDetail()
+  }
+  if (!isRealNameVerified.value) {
+    ElMessage.warning('请先在个人中心完成实名认证后再预约')
+    return
+  }
   if (!reserveQuery.scenicAreaId || !reserveQuery.spotId) {
     ElMessage.warning('请先选择景区和景点')
     return
@@ -504,15 +660,18 @@ async function submitOrder() {
     ElMessage.warning('当前用户信息缺少 userId，请重新登录后再试')
     return
   }
+  if (!validateVisitors()) return
 
   submitting.order = true
   try {
+    const visitors = buildVisitorsPayload()
     const order = await createReservationOrderApi({
       userId: Number(userStore.userId),
       slotId: Number(selectedSlot.value.slotId || selectedSlot.value.id),
-      visitorCount: Number(orderForm.visitorCount),
+      visitorCount: visitors?.length || 1,
       contactName: orderForm.contactName || undefined,
       contactPhone: orderForm.contactPhone || undefined,
+      visitors,
       sourceType: 'FRONTEND',
       clientRequestId: createClientRequestId(),
       remark: orderForm.remark || undefined,
@@ -523,6 +682,7 @@ async function submitOrder() {
     resetOrderForm()
     await Promise.all([fetchReservationSlots(), fetchMyOrders()])
   } finally {
+    clearVisitorIdCards()
     submitting.order = false
   }
 }
@@ -580,6 +740,38 @@ async function cancelOrder(row) {
 
 function canCancel(row) {
   return ['PENDING', 'CONFIRMED'].includes(row.status)
+}
+
+function canEnterOrder(row) {
+  return row?.reservationNo && row.status === 'CONFIRMED'
+}
+
+async function enterOrder(row) {
+  if (!canEnterOrder(row)) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确认将预约单“${row.reservationNo}”标记为已入园吗？`,
+      '模拟检票入园',
+      {
+        type: 'warning',
+        confirmButtonText: '确认入园',
+        cancelButtonText: '取消',
+      },
+    )
+  } catch {
+    return
+  }
+
+  enteringReservationNo.value = row.reservationNo
+  try {
+    // 重点：当前还没有扫码能力，先用按钮模拟检票入园状态流转。
+    await enterReservationOrderApi(row.reservationNo)
+    ElMessage.success('已标记为入园')
+    await fetchMyOrders()
+  } finally {
+    enteringReservationNo.value = ''
+  }
 }
 
 async function fetchRules() {
@@ -814,6 +1006,22 @@ watch(
 )
 
 watch(
+  () => selectedSlot.value,
+  () => {
+    if (visitorForms.value.length > visitorLimit.value) {
+      visitorForms.value = visitorForms.value.slice(0, visitorLimit.value)
+    }
+  },
+)
+
+watch(
+  () => reserveFormVisible.value,
+  (visible) => {
+    if (!visible) clearVisitorIdCards()
+  },
+)
+
+watch(
   () => userStore.isAdmin,
   (isAdmin) => {
     activeTab.value = isAdmin ? 'rules' : 'reserve'
@@ -822,7 +1030,11 @@ watch(
 
 onMounted(async () => {
   resetOrderForm()
-  await Promise.all([fetchScenicOptions(), canReserve.value ? fetchEnabledSpots() : fetchRules()])
+  await Promise.all([
+    fetchScenicOptions(),
+    canReserve.value ? fetchCurrentNormalUserDetail() : fetchRules(),
+    canReserve.value ? fetchEnabledSpots() : Promise.resolve(),
+  ])
   if (canReserve.value) fetchMyOrders()
   if (canManage.value) {
     fetchAdminSlots()
@@ -835,6 +1047,8 @@ onMounted(async () => {
   <section class="reservation-workspace">
     <el-tabs v-model="activeTab" class="reservation-tabs">
       <el-tab-pane v-if="canReserve" label="预约景点" name="reserve">
+        <el-alert v-if="!isRealNameVerified" class="notice" type="warning" :closable="false"
+          title="预约前需要先完成实名认证，请到个人中心提交真实姓名和身份证号。" show-icon />
         <div class="panel">
           <div class="toolbar">
             <el-select v-model="reserveQuery.scenicAreaId" clearable placeholder="选择景区"
@@ -861,14 +1075,14 @@ onMounted(async () => {
             </el-table-column>
             <el-table-column label="操作" width="110" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openReserveForm(row)">预约</el-button>
+                <el-button link type="primary" :disabled="!isRealNameVerified" @click="openReserveForm(row)">预约</el-button>
               </template>
             </el-table-column>
           </el-table>
         </div>
 
         <el-dialog v-model="reserveFormVisible" class="rule-dialog" title="提交景点预约" width="760px" top="8vh"
-          destroy-on-close>
+          destroy-on-close v-loading="loading.profile">
           <div class="toolbar">
             <el-select v-model="reserveQuery.spotId" placeholder="选择预约景点">
               <el-option v-for="item in enabledSpots" :key="item.spotId || item.id" :label="item.spotName"
@@ -895,7 +1109,7 @@ onMounted(async () => {
 
           <el-form class="reserve-form-grid" :model="orderForm" label-position="top">
             <el-form-item label="预约人数" class="rule-span-2">
-              <el-input-number v-model="orderForm.visitorCount" :min="1" :max="selectedSlot?.remainingCount || 999" />
+              <el-input-number :model-value="visitorCount" :min="1" :max="visitorLimit" disabled />
             </el-form-item>
             <el-form-item label="联系人" class="rule-span-2">
               <el-input v-model="orderForm.contactName" clearable />
@@ -907,6 +1121,30 @@ onMounted(async () => {
               <el-input v-model="orderForm.remark" type="textarea" :rows="2" />
             </el-form-item>
           </el-form>
+
+          <div class="visitor-section">
+            <div class="visitor-section__head">
+              <div>
+                <h3>入园人信息</h3>
+                <p>预约本人必须和当前账号实名认证信息一致，身份证号仅用于本次提交。</p>
+              </div>
+              <el-button :disabled="visitorForms.length >= visitorLimit || visitorForms.length >= 5" @click="addVisitor">
+                添加同行人
+              </el-button>
+            </div>
+            <div class="visitor-list">
+              <div v-for="(visitor, index) in visitorForms" :key="index" class="visitor-row">
+                <el-tag v-if="visitor.booker" type="success" effect="plain">预约本人</el-tag>
+                <span v-else class="visitor-row__index">同行人 {{ index }}</span>
+                <el-input v-model.trim="visitor.realName" placeholder="真实姓名" :disabled="visitor.booker" clearable />
+                <el-input v-if="visitor.booker" :model-value="visitor.idCardNo || bookerIdCardMasked"
+                  :placeholder="bookerIdCardMasked || '身份证号'" clearable
+                  @input="(value) => { visitor.idCardNo = value }" />
+                <el-input v-else v-model.trim="visitor.idCardNo" placeholder="身份证号" clearable />
+                <el-button link type="danger" :disabled="visitor.booker" @click="removeVisitor(index)">删除</el-button>
+              </div>
+            </div>
+          </div>
           <template #footer>
             <div class="submit-row">
               <el-button @click="reserveFormVisible = false">取消</el-button>
@@ -932,13 +1170,33 @@ onMounted(async () => {
               <template #default="{ row }">{{ formatTimeRange(row) }}</template>
             </el-table-column>
             <el-table-column prop="visitorCount" label="人数" min-width="80" />
+            <el-table-column label="入园人" min-width="220">
+              <template #default="{ row }">
+                <div class="visitor-tags">
+                  <el-tag v-for="visitor in row.visitors || []" :key="`${visitor.realName}-${visitor.idCardMasked}`"
+                    :type="visitor.booker ? 'success' : 'info'" effect="plain">
+                    {{ formatVisitorText(visitor) }}
+                  </el-tag>
+                  <span v-if="!row.visitors?.length">-</span>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column label="状态" min-width="100">
               <template #default="{ row }">
                 <el-tag :type="statusTagType(row.status)" effect="plain">{{ formatStatusText(row.status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="110" fixed="right">
+            <el-table-column label="操作" width="170" fixed="right">
               <template #default="{ row }">
+                <el-button
+                  link
+                  type="primary"
+                  :disabled="!canEnterOrder(row)"
+                  :loading="enteringReservationNo === row.reservationNo"
+                  @click="enterOrder(row)"
+                >
+                  我已入园
+                </el-button>
                 <el-button link type="danger" :disabled="!canCancel(row)" @click="cancelOrder(row)">取消</el-button>
               </template>
             </el-table-column>
@@ -1163,6 +1421,17 @@ onMounted(async () => {
               <template #default="{ row }">{{ formatTimeRange(row) }}</template>
             </el-table-column>
             <el-table-column prop="visitorCount" label="人数" min-width="80" />
+            <el-table-column label="入园人" min-width="240">
+              <template #default="{ row }">
+                <div class="visitor-tags">
+                  <el-tag v-for="visitor in row.visitors || []" :key="`${visitor.realName}-${visitor.idCardMasked}`"
+                    :type="visitor.booker ? 'success' : visitorStatusTagType(visitor.status)" effect="plain">
+                    {{ formatVisitorText(visitor) }}
+                  </el-tag>
+                  <span v-if="!row.visitors?.length">-</span>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column label="状态" min-width="100">
               <template #default="{ row }">
                 <el-tag :type="statusTagType(row.status)" effect="plain">{{ formatStatusText(row.status) }}</el-tag>
@@ -1301,6 +1570,57 @@ onMounted(async () => {
   gap: 8px 12px;
 }
 
+.visitor-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.visitor-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.visitor-section__head h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.visitor-section__head p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.visitor-list,
+.visitor-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.visitor-list {
+  flex-direction: column;
+}
+
+.visitor-row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr) minmax(0, 1.35fr) 44px;
+  gap: 8px;
+  align-items: center;
+}
+
+.visitor-row__index {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .reserve-form-grid :deep(.el-form-item),
 .rule-form-grid :deep(.el-form-item) {
   margin-bottom: 8px;
@@ -1395,6 +1715,15 @@ onMounted(async () => {
 
   .reserve-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .visitor-section__head,
+  .visitor-row {
+    grid-template-columns: 1fr;
+  }
+
+  .visitor-section__head {
+    display: grid;
   }
 
   .rule-span-2,

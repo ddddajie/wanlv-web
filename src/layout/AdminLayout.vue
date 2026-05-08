@@ -12,6 +12,13 @@ const showShellHeader = computed(() => route.path !== '/dashboard')
 const isDashboardRoute = computed(() => route.path === '/dashboard')
 
 const navItems = computed(() => {
+  if (!userStore.isLoggedIn) {
+    return [
+      { label: '数据大屏', path: '/dashboard' },
+      { label: '导游地图', path: '/tourist-map' },
+    ]
+  }
+
   const items = [
     { label: '控制台', path: '/dashboard' },
   ]
@@ -43,6 +50,13 @@ async function handleLogout() {
     return
   }
 }
+
+function handleLogin() {
+  router.push({
+    path: '/normal/login',
+    query: route.fullPath === '/normal/login' ? undefined : { redirect: route.fullPath },
+  })
+}
 </script>
 
 <template>
@@ -68,7 +82,7 @@ async function handleLogout() {
         </el-button>
       </nav>
 
-      <div class="shell-header__user">
+      <div v-if="userStore.isLoggedIn" class="shell-header__user">
         <div class="shell-header__meta">
           <span class="shell-header__name">{{ userStore.displayName || userStore.username }}</span>
           <div class="shell-header__tags">
@@ -81,6 +95,10 @@ async function handleLogout() {
           </div>
         </div>
         <el-button round @click="handleLogout">退出登录</el-button>
+      </div>
+
+      <div v-else class="shell-header__user">
+        <el-button type="primary" round @click="handleLogin">去登录</el-button>
       </div>
     </header>
 
