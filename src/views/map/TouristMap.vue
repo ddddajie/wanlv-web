@@ -13,6 +13,7 @@ import {
   Tickets,
 } from '@element-plus/icons-vue'
 import { getLatestAgentRouteGeoApi, getMapInitApi, pageScenicAreasApi } from '@/api/map'
+import { useScenicWarmReminder } from '@/composables/useScenicWarmReminder'
 import { pinia, useUserStore } from '@/stores'
 import MapCanvas from './MapCanvas.vue'
 import UserMapControls from './UserMapControls.vue'
@@ -70,6 +71,12 @@ const highlightedSpots = computed(() =>
 const scenicLocationText = computed(() => {
   const parts = [scenicArea.value?.province, scenicArea.value?.city, scenicArea.value?.district].filter(Boolean)
   return parts.length ? parts.join(' · ') : scenicArea.value?.address || '景区位置待完善'
+})
+const scenicWarmReminderName = computed(() => getSelectedScenicName(selectedScenicId.value))
+
+useScenicWarmReminder({
+  scenicAreaId: selectedScenicId,
+  scenicAreaName: scenicWarmReminderName,
 })
 
 const mapLegendItems = [

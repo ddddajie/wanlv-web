@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useScenicWarmReminder } from '@/composables/useScenicWarmReminder'
 import { pinia, useUserStore } from '@/stores'
 import {
   agentChatApi,
@@ -111,6 +112,8 @@ const statusText = computed(() => ({ connected: '已连接', connecting: '连接
 const statusType = computed(() => ({ connected: 'success', connecting: 'warning', disconnected: 'info' }[connectionStatus.value] || 'info'))
 const bubbleStatusText = computed(() => ({ idle: '待命中', queued: '准备播报', speaking: '播报中', finished: '播报完成' }[speechState.value] || '待命中'))
 const scenicAreaLabel = computed(() => chatState.detectedScenicAreaName || routeScenicAreaName.value || (chatState.scenicAreaId ? `景区 #${chatState.scenicAreaId}` : '未确认'))
+const warmReminderScenicAreaId = computed(() => chatState.scenicAreaId ?? routeScenicAreaId.value)
+const warmReminderScenicAreaName = computed(() => chatState.detectedScenicAreaName || routeScenicAreaName.value)
 const scenicConfidenceText = computed(() => typeof chatState.detectionConfidence === 'number' ? `${Math.round(chatState.detectionConfidence * 100)}%` : '--')
 const hasScenicPrompt = computed(() => Boolean(chatState.needScenicAreaConfirm || chatState.detectedScenicAreaName))
 const canBindDetectedScenic = computed(() => Boolean(chatState.detectedScenicAreaId && currentUserId.value))
@@ -123,6 +126,11 @@ const scenicStatusText = computed(() => {
   if (hasScenicPrompt.value) return '待确认'
   return '未确认'
 })
+useScenicWarmReminder({
+  scenicAreaId: warmReminderScenicAreaId,
+  scenicAreaName: warmReminderScenicAreaName,
+})
+
 const scrollToChatBottom = async () => {
   await nextTick()
   if (chatArea.value) {
