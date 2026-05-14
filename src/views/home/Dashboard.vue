@@ -1,8 +1,8 @@
 <script setup>
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
 import { pinia, useUserStore } from '@/stores'
+import { dialog } from '@/utils/feedback'
 import AdminCreate from '@/views/user/AdminCreate.vue'
 import AdminUserDetail from '@/views/user/AdminUserDetail.vue'
 import AdminUserList from '@/views/user/AdminUserList.vue'
@@ -124,6 +124,17 @@ const menuItems = computed(() => {
   return items
 })
 
+const menuOptions = computed(() =>
+  menuItems.value.map((item) => ({
+    label: item.label,
+    key: item.key,
+    children: item.children?.map((child) => ({
+      label: child.label,
+      key: child.key,
+    })),
+  })),
+)
+
 const extraViewItems = computed(() => (isGuest.value ? [] : [{ key: 'profile-edit', label: '修改信息' }]))
 
 const flatMenuItems = computed(() =>
@@ -211,8 +222,7 @@ function handleLogin() {
 
 async function handleLogout() {
   try {
-    await ElMessageBox.confirm('退出后需要重新登录，是否继续？', '退出登录', {
-      type: 'warning',
+    await dialog.confirm('退出后需要重新登录，是否继续？', '退出登录', {
       confirmButtonText: '退出',
       cancelButtonText: '取消',
     })
@@ -254,15 +264,15 @@ onBeforeUnmount(() => {
       'dashboard-workspace__frame--compact': isCompactSidebar,
       'dashboard-workspace__frame--screen': isDashboardScreenActive,
     }">
-      <aside v-if="!isDashboardScreenActive" class="dashboard-sidebar" :class="{
+      <aside v-if="!isDashboardScreenActive" class="dashboard-sidebar border-r border-slate-300 bg-slate-50" :class="{
         'dashboard-sidebar--compact': isCompactSidebar,
         'dashboard-sidebar--open': isCompactSidebar && isSidebarOpen,
       }">
-        <div class="dashboard-user">
+        <div class="dashboard-user rounded-md bg-white">
           <div v-if="!isGuest" class="dashboard-user__top">
-            <div class="dashboard-user__avatar">
+            <n-avatar class="dashboard-user__avatar" round :size="36">
               <img :src="avatarUrl" alt="用户头像" @error="handleAvatarError" />
-            </div>
+            </n-avatar>
 
             <div class="dashboard-user__meta">
               <strong>{{ sidebarDisplayName }}</strong>
@@ -271,49 +281,38 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-if="!isGuest" class="dashboard-user__identity">
-            <span>身份信息</span>
+            <span>当前身份</span>
             <strong>{{ roleLabel }}</strong>
           </div>
 
           <div v-if="!isGuest" class="dashboard-user__actions">
-            <el-button class="dashboard-user__action" round @click="handleProfileEdit">
+            <n-button class="dashboard-user__action" size="small" quaternary @click="handleProfileEdit">
               修改信息
-            </el-button>
-            <el-button class="dashboard-user__logout" round @click="handleLogout">
+            </n-button>
+            <n-button class="dashboard-user__logout" size="small" quaternary @click="handleLogout">
               退出登录
-            </el-button>
+            </n-button>
           </div>
 
           <div v-else class="dashboard-guest">
             <strong>游客模式</strong>
             <span>可查看数据大屏和导游地图</span>
-            <el-button type="primary" round @click="handleLogin">去登录</el-button>
+            <n-button type="primary" size="small" @click="handleLogin">去登录</n-button>
           </div>
         </div>
 
         <div class="dashboard-sidebar__brand">
-          <p class="dashboard-sidebar__eyebrow">Wanlv Console</p>
-          <h1 class="dashboard-sidebar__title">菜单栏</h1>
+          <span class="dashboard-sidebar__title">菜单栏</span>
         </div>
 
-        <el-menu :default-active="activeMenu" class="dashboard-menu" @select="handleMenuSelect">
-          <template v-for="item in menuItems" :key="item.key">
-            <el-sub-menu v-if="item.children?.length" :index="item.key">
-              <template #title>
-                <span class="dashboard-menu__label">{{ item.label }}</span>
-              </template>
-
-              <el-menu-item v-for="child in item.children" :key="child.key" :index="child.key"
-                class="dashboard-menu__item dashboard-menu__item--child">
-                <span class="dashboard-menu__label">{{ child.label }}</span>
-              </el-menu-item>
-            </el-sub-menu>
-
-            <el-menu-item v-else :index="item.key" class="dashboard-menu__item">
-              <span class="dashboard-menu__label">{{ item.label }}</span>
-            </el-menu-item>
-          </template>
-        </el-menu>
+        <n-menu
+          v-model:value="activeMenu"
+          class="dashboard-menu"
+          :options="menuOptions"
+          :indent="12"
+          :collapsed-width="64"
+          @update:value="handleMenuSelect"
+        />
       </aside>
 
       <transition name="dashboard-sidebar-mask">
@@ -384,8 +383,8 @@ onBeforeUnmount(() => {
 
 .dashboard-workspace__frame {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 24px;
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: 0;
   position: relative;
   height: 100%;
   padding: 0;
@@ -403,36 +402,32 @@ onBeforeUnmount(() => {
 .dashboard-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
   min-height: 0;
-  padding: 22px;
+  padding: 16px 12px;
   border-radius: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 118, 110, 0.94));
-  color: #f8fafc;
+  background: #f8fafc;
+  color: #0f172a;
+  box-shadow: 8px 0 20px rgba(15, 23, 42, 0.04);
   overflow: hidden;
 }
 
 .dashboard-user {
   display: grid;
-  gap: 12px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
 }
 
 .dashboard-user__top {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .dashboard-user__avatar {
-  width: 56px;
-  height: 56px;
-  overflow: hidden;
-  flex: 0 0 56px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  flex: 0 0 36px;
+  background: #e2e8f0;
 }
 
 .dashboard-user__avatar img {
@@ -444,45 +439,44 @@ onBeforeUnmount(() => {
 
 .dashboard-user__meta {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 
 .dashboard-user__meta strong {
-  color: #ffffff;
-  font-size: 16px;
+  color: #0f172a;
+  font-size: 13px;
   line-height: 1.3;
   word-break: break-word;
 }
 
 .dashboard-user__meta span {
-  color: rgba(226, 232, 240, 0.82);
-  font-size: 13px;
+  color: #64748b;
+  font-size: 11px;
   word-break: break-word;
 }
 
 .dashboard-user__identity {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .dashboard-user__identity span {
-  color: rgba(226, 232, 240, 0.72);
-  font-size: 12px;
+  color: #64748b;
+  font-size: 11px;
 }
 
 .dashboard-user__identity strong {
-  color: #ffffff;
-  font-size: 14px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .dashboard-user__actions {
-  display: grid;
-  gap: 10px;
-}
-
-.dashboard-user__actions :deep(.el-button + .el-button) {
-  margin-left: 0;
+  display: flex;
+  gap: 6px;
 }
 
 .dashboard-guest {
@@ -491,23 +485,28 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-guest strong {
-  color: #ffffff;
-  font-size: 18px;
+  color: #0f172a;
+  font-size: 13px;
 }
 
 .dashboard-guest span {
-  color: rgba(226, 232, 240, 0.78);
-  font-size: 13px;
+  color: #64748b;
+  font-size: 11px;
   line-height: 1.5;
 }
 
 .dashboard-user__action,
 .dashboard-user__logout {
-  width: 100%;
+  flex: 1;
+}
+
+.dashboard-user__actions :deep(.n-button) {
+  --n-font-size: 12px;
+  --n-height: 28px;
 }
 
 .dashboard-sidebar__brand {
-  padding-bottom: 8px;
+  padding: 4px 6px 0;
 }
 
 .dashboard-sidebar__eyebrow {
@@ -520,20 +519,19 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-sidebar__title {
-  margin: 0;
-  font-size: 32px;
-  line-height: 1.1;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .dashboard-menu {
   flex: 1;
   min-height: 0;
-  padding-right: 6px;
-  border-right: 0;
-  background: transparent;
+  padding-right: 0;
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(226, 232, 240, 0.58) rgba(255, 255, 255, 0.08);
+  scrollbar-color: rgba(148, 163, 184, 0.42) transparent;
 }
 
 .dashboard-menu::-webkit-scrollbar {
@@ -542,55 +540,58 @@ onBeforeUnmount(() => {
 
 .dashboard-menu::-webkit-scrollbar-track {
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
 }
 
 .dashboard-menu::-webkit-scrollbar-thumb {
   min-height: 56px;
   border: 2px solid transparent;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.82), rgba(148, 163, 184, 0.62)) border-box;
+  background: rgba(148, 163, 184, 0.48) border-box;
   background-clip: padding-box;
 }
 
 .dashboard-menu::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(203, 213, 225, 0.78)) border-box;
+  background: rgba(100, 116, 139, 0.58) border-box;
   background-clip: padding-box;
 }
 
-.dashboard-menu :deep(.el-menu-item),
-.dashboard-menu :deep(.el-sub-menu__title) {
-  min-height: 52px;
-  margin-bottom: 8px;
-  border-radius: 16px;
-  color: rgba(248, 250, 252, 0.88);
+/* 侧边栏菜单对齐参考图：更窄、更紧凑，选中态只用淡蓝色提示。 */
+.dashboard-menu :deep(.n-menu-item-content),
+.dashboard-menu :deep(.n-menu-item-content-header),
+.dashboard-menu :deep(.n-menu-item-content__arrow) {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.dashboard-menu :deep(.el-menu-item:hover),
-.dashboard-menu :deep(.el-sub-menu__title:hover) {
-  background: rgba(255, 255, 255, 0.1);
+.dashboard-menu :deep(.n-menu-item-content) {
+  min-height: 34px;
+  margin: 1px 0;
+  border-radius: 4px;
+  padding-right: 8px;
+  font-size: 13px;
 }
 
-.dashboard-menu :deep(.el-menu-item.is-active) {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.22), rgba(255, 255, 255, 0.16));
-  color: #ffffff;
+.dashboard-menu :deep(.n-menu-item-content::before) {
+  border-radius: 4px;
 }
 
-.dashboard-menu :deep(.el-sub-menu .el-menu) {
-  background: transparent;
+.dashboard-menu :deep(.n-menu-item-content:hover::before) {
+  background: #f1f5f9;
 }
 
-.dashboard-menu :deep(.el-sub-menu.is-opened > .el-sub-menu__title) {
-  background: rgba(255, 255, 255, 0.08);
+.dashboard-menu :deep(.n-menu-item-content--selected::before) {
+  background: #e8f3ff;
 }
 
-.dashboard-menu__item--child {
-  margin-left: 8px;
+.dashboard-menu :deep(.n-menu-item-content--selected .n-menu-item-content-header) {
+  color: #1677ff;
+  font-weight: 600;
 }
 
-.dashboard-menu__label {
-  font-size: 15px;
-  font-weight: 700;
+.dashboard-menu :deep(.n-submenu .n-menu-item-content-header) {
+  font-size: 12px;
 }
 
 .dashboard-sidebar__mask {
@@ -608,17 +609,19 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  gap: 20px;
+  gap: 10px;
+  padding-left: 14px;
   overflow: hidden;
 }
 
 .dashboard-workspace__frame--screen .dashboard-content {
   gap: 0;
+  padding-left: 0;
 }
 
 .dashboard-content__header {
   flex: 0 0 auto;
-  padding: 8px 6px 0;
+  padding: 4px 6px 0;
 }
 
 .dashboard-content__header-main {
@@ -652,18 +655,19 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-content__eyebrow {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
   color: #0f766e;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .dashboard-content__title {
   margin: 0;
   color: #0f172a;
-  font-size: 28px;
+  font-size: 24px;
+  line-height: 1.15;
 }
 
 .dashboard-content__body {
@@ -731,8 +735,9 @@ onBeforeUnmount(() => {
     left: 0;
     bottom: 0;
     z-index: 20;
-    width: min(320px, calc(100vw - 48px));
+    width: min(280px, calc(100vw - 48px));
     max-width: calc(100vw - 48px);
+    background: #f8fafc;
     box-shadow: 0 24px 48px rgba(15, 23, 42, 0.22);
     transform: translateX(calc(-100% - 24px));
     transition: transform 0.28s ease;
@@ -760,7 +765,7 @@ onBeforeUnmount(() => {
     top: 0;
     left: 0;
     bottom: 0;
-    width: min(320px, calc(100vw - 32px));
+    width: min(280px, calc(100vw - 32px));
     max-width: calc(100vw - 32px);
     transform: translateX(calc(-100% - 16px));
   }

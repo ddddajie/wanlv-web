@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { dialog } from '@/utils/feedback'
 import { pinia, useUserStore } from '@/stores'
 
 const route = useRoute()
@@ -19,9 +19,7 @@ const navItems = computed(() => {
     ]
   }
 
-  const items = [
-    { label: '控制台', path: '/dashboard' },
-  ]
+  const items = [{ label: '控制台', path: '/dashboard' }]
 
   if (!userStore.isAdmin) {
     items.push({ label: '智能问答', path: '/chat' })
@@ -36,10 +34,15 @@ const navItems = computed(() => {
   return items
 })
 
+const roleLabel = computed(() => {
+  if (userStore.isSuperAdmin) return '超级管理员'
+  if (userStore.isAdmin) return '管理员'
+  return '普通用户'
+})
+
 async function handleLogout() {
   try {
-    await ElMessageBox.confirm('退出后需要重新登录，是否继续？', '退出登录', {
-      type: 'warning',
+    await dialog.confirm('退出后需要重新登录，是否继续？', '退出登录', {
       confirmButtonText: '退出',
       cancelButtonText: '取消',
     })
@@ -62,43 +65,39 @@ function handleLogin() {
 <template>
   <div class="shell-layout" :class="{ 'shell-layout--dashboard': isDashboardRoute }">
     <header v-if="showShellHeader" class="shell-header">
-      <div class="shell-header__brand">
-        <div class="shell-header__logo">WL</div>
+      <RouterLink to="/dashboard" class="shell-header__brand">
+        <div class="shell-header__logo">万旅</div>
         <div>
-          <div class="shell-header__title">万旅用户中心</div>
-          <div class="shell-header__subtitle">按当前后端接口完成前端联调</div>
+          <div class="shell-header__title">万旅文旅运营平台</div>
+          <div class="shell-header__subtitle">景区预约、地图导览与智能问答的一体化工作台</div>
         </div>
-      </div>
+      </RouterLink>
 
-      <nav class="shell-header__nav">
-        <el-button
+      <nav class="shell-header__nav" aria-label="主导航">
+        <n-button
           v-for="item in navItems"
           :key="item.path"
-          :type="route.path === item.path ? 'primary' : 'default'"
+          :type="route.path === item.path ? 'primary' : 'tertiary'"
           round
           @click="router.push(item.path)"
         >
           {{ item.label }}
-        </el-button>
+        </n-button>
       </nav>
 
       <div v-if="userStore.isLoggedIn" class="shell-header__user">
         <div class="shell-header__meta">
           <span class="shell-header__name">{{ userStore.displayName || userStore.username }}</span>
           <div class="shell-header__tags">
-            <el-tag effect="plain" type="success">
-              {{ userStore.userType === 'admin' ? '管理员' : '普通用户' }}
-            </el-tag>
-            <el-tag effect="plain" :type="userStore.isSuperAdmin ? 'warning' : 'info'">
-              {{ userStore.role || 'normal_user' }}
-            </el-tag>
+            <n-tag size="small" :bordered="false" type="success">{{ roleLabel }}</n-tag>
+            <n-tag size="small" :bordered="false" type="info">{{ userStore.role || 'normal_user' }}</n-tag>
           </div>
         </div>
-        <el-button round @click="handleLogout">退出登录</el-button>
+        <n-button round secondary @click="handleLogout">退出登录</n-button>
       </div>
 
       <div v-else class="shell-header__user">
-        <el-button type="primary" round @click="handleLogin">去登录</el-button>
+        <n-button type="primary" round @click="handleLogin">去登录</n-button>
       </div>
     </header>
 
@@ -109,5 +108,139 @@ function handleLogin() {
 </template>
 
 <style scoped>
-.shell-layout{min-height:100vh;padding:24px}.shell-layout--dashboard{height:100vh;padding:0;overflow:hidden}.shell-header{display:grid;grid-template-columns:1.2fr auto auto;gap:20px;align-items:center;padding:20px 24px;border:1px solid rgba(255,255,255,.7);border-radius:28px;background:rgba(255,255,255,.78);backdrop-filter:blur(18px);box-shadow:0 22px 48px rgba(15,23,42,.08)}.shell-header__brand,.shell-header__user{display:flex;align-items:center;gap:14px}.shell-header__logo{width:52px;height:52px;border-radius:18px;display:grid;place-items:center;color:#fff;font-size:16px;font-weight:800;background:linear-gradient(135deg,#0f766e,#f59e0b)}.shell-header__title{color:#0f172a;font-size:22px;font-weight:800}.shell-header__subtitle{margin-top:4px;color:#475569;font-size:13px}.shell-header__nav{display:flex;gap:10px;flex-wrap:wrap}.shell-header__user{justify-content:flex-end}.shell-header__meta{display:flex;flex-direction:column;gap:8px}.shell-header__name{color:#0f172a;font-weight:700;text-align:right}.shell-header__tags{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}.shell-main{padding-top:24px}.shell-main--compact{padding-top:0}.shell-layout--dashboard .shell-main{flex:1;min-height:0}@media (max-width:1120px){.shell-header{grid-template-columns:1fr}.shell-header__user{justify-content:space-between}.shell-header__name,.shell-header__tags{text-align:left;justify-content:flex-start}}@media (max-width:768px){.shell-layout{padding:16px}.shell-layout--dashboard{padding:0}.shell-header{padding:18px;border-radius:24px}.shell-header__user{flex-direction:column;align-items:stretch}.shell-header__meta{width:100%}}
+.shell-layout {
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.shell-layout--dashboard {
+  height: 100vh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.shell-header {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto auto;
+  gap: 18px;
+  align-items: center;
+  min-height: var(--wl-header-height);
+  padding: 12px 16px;
+  border: 1px solid var(--wl-line);
+  border-radius: var(--wl-radius-md);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--wl-shadow-sm);
+}
+
+.shell-header__brand,
+.shell-header__user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.shell-header__logo {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--wl-primary-dark), var(--wl-primary));
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.shell-header__title {
+  color: var(--wl-ink);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.shell-header__subtitle {
+  margin-top: 3px;
+  color: var(--wl-muted);
+  font-size: 12px;
+}
+
+.shell-header__nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.shell-header__user {
+  justify-content: flex-end;
+}
+
+.shell-header__meta {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.shell-header__name {
+  color: var(--wl-ink);
+  font-weight: 750;
+  text-align: right;
+}
+
+.shell-header__tags {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.shell-main {
+  padding-top: 18px;
+}
+
+.shell-main--compact {
+  padding-top: 0;
+}
+
+.shell-layout--dashboard .shell-main {
+  height: 100%;
+  min-height: 0;
+}
+
+@media (max-width: 1120px) {
+  .shell-header {
+    grid-template-columns: 1fr;
+  }
+
+  .shell-header__nav {
+    justify-content: flex-start;
+  }
+
+  .shell-header__user {
+    justify-content: space-between;
+  }
+
+  .shell-header__name,
+  .shell-header__tags {
+    text-align: left;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .shell-layout {
+    padding: 12px;
+  }
+
+  .shell-layout--dashboard {
+    padding: 0;
+  }
+
+  .shell-header__user {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
 </style>

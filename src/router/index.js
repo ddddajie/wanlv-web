@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import AdminLayout from '@/layout/AdminLayout.vue'
 import { pinia, useUserStore } from '@/stores'
+import { message as feedbackMessage } from '@/utils/feedback'
 
 const routes = [
   {
@@ -94,13 +94,13 @@ router.beforeEach((to, from, next) => {
   }
 
   if (superAdminOnly && !userStore.isSuperAdmin) {
-    ElMessage.error('只有超级管理员才能新增管理员')
+    feedbackMessage.error('只有超级管理员才能新增管理员')
     next('/dashboard')
     return
   }
 
   if (normalOnly && userStore.isAdmin) {
-    ElMessage.error('智能问答仅普通用户可使用')
+    feedbackMessage.error('智能问答仅普通用户可使用')
     next('/dashboard')
     return
   }

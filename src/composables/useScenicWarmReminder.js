@@ -5,7 +5,7 @@ import { getNormalUserApi } from '@/api/user'
 import { pinia, useUserStore } from '@/stores'
 
 // 正式环境建议恢复为：2 * 60 * 60 * 1000
-export const WARM_REMINDER_DELAY_MS = 60 * 1000
+export const WARM_REMINDER_DELAY_MS = 60*60*1000
 
 const WARM_REMINDER_SOURCE_TYPE = 'SCENIC_WARM_REMINDER'
 const WARM_REMINDER_STORAGE_PREFIX = 'wanlv:scenic-warm-reminder'

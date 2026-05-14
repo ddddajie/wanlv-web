@@ -1,7 +1,6 @@
 <script setup>
 import { onBeforeUnmount, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import {
   normalLoginApi,
@@ -9,6 +8,7 @@ import {
   sendNormalUserPhoneCodeApi,
 } from '@/api/user'
 import { pinia, useUserStore } from '@/stores'
+import { message } from '@/utils/feedback'
 
 const router = useRouter()
 const route = useRoute()
@@ -74,7 +74,11 @@ function startCountdown(seconds) {
 }
 
 async function sendCode() {
-  await phoneFormRef.value.validateField('phone')
+  if (!phonePattern.test(phoneForm.phone)) {
+    message.warning('请输入正确的手机号')
+    return
+  }
+
   sendingCode.value = true
 
   try {
@@ -89,7 +93,7 @@ async function sendCode() {
     }
 
     startCountdown(result?.expireSeconds)
-    ElMessage.success('验证码已发送')
+    message.success('验证码已发送')
   } finally {
     sendingCode.value = false
   }
@@ -106,7 +110,7 @@ async function handlePhoneSubmit() {
     })
 
     userStore.setLogin(userInfo)
-    ElMessage.success(`欢迎回来，${userInfo.displayName || userInfo.username}`)
+    message.success(`欢迎回来，${userInfo.displayName || userInfo.username}`)
 
     const redirect =
       typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
@@ -123,7 +127,7 @@ async function handlePasswordSubmit() {
   try {
     const userInfo = await normalLoginApi(passwordForm)
     userStore.setLogin(userInfo)
-    ElMessage.success(`欢迎回来，${userInfo.displayName || userInfo.username}`)
+    message.success(`欢迎回来，${userInfo.displayName || userInfo.username}`)
 
     const redirect =
       typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
@@ -149,58 +153,59 @@ onBeforeUnmount(() => {
     ]">
     <template #hero-actions>
       <div class="guest-entry">
-        <el-button plain size="large" @click="enterGuestView('user-reservation-dashboard-screen')">
+        <n-button secondary size="large" @click="enterGuestView('user-reservation-dashboard-screen')">
           游客查看数据大屏
-        </el-button>
-        <el-button plain size="large" @click="enterGuestView('tourist-map')">
+        </n-button>
+        <n-button secondary size="large" @click="enterGuestView('tourist-map')">
           游客查看导游地图
-        </el-button>
+        </n-button>
       </div>
     </template>
 
-    <el-tabs v-model="activeTab" class="login-tabs">
-      <el-tab-pane label="手机号验证码" name="phone">
-        <el-form ref="phoneFormRef" :model="phoneForm" :rules="phoneRules" label-position="top"
+    <n-tabs v-model:value="activeTab" class="login-tabs" animated>
+      <n-tab-pane tab="手机号验证码" name="phone">
+        <n-form ref="phoneFormRef" :model="phoneForm" :rules="phoneRules" label-placement="top"
           @submit.prevent="handlePhoneSubmit">
-          <el-form-item label="手机号" prop="phone">
-            <el-input v-model.trim="phoneForm.phone" placeholder="请输入手机号" size="large" maxlength="11" clearable />
-          </el-form-item>
+          <n-form-item label="手机号" path="phone">
+            <n-input v-model:value="phoneForm.phone" placeholder="请输入手机号" size="large" maxlength="11" clearable />
+          </n-form-item>
 
-          <el-form-item label="验证码" prop="code">
+          <n-form-item label="验证码" path="code">
             <div class="code-row">
-              <el-input v-model.trim="phoneForm.code" placeholder="请输入验证码" size="large" maxlength="6" clearable />
-              <el-button size="large" :disabled="countdown > 0" :loading="sendingCode" @click="sendCode">
+              <n-input v-model:value="phoneForm.code" placeholder="请输入验证码" size="large" maxlength="6" clearable />
+              <n-button size="large" :disabled="countdown > 0" :loading="sendingCode" @click="sendCode">
                 {{ countdown > 0 ? `${countdown}s` : '获取验证码' }}
-              </el-button>
+              </n-button>
             </div>
-          </el-form-item>
+          </n-form-item>
 
-          <el-alert v-if="devCode" class="dev-code" type="info" show-icon :closable="false"
-            :title="`开发联调验证码：${devCode}`" />
+          <n-alert v-if="devCode" class="dev-code" type="info" :show-icon="true" :closable="false">
+            开发联调验证码：{{ devCode }}
+          </n-alert>
 
-          <el-button type="primary" size="large" class="auth-action" :loading="loading" @click="handlePhoneSubmit">
+          <n-button type="primary" size="large" class="auth-action" :loading="loading" @click="handlePhoneSubmit">
             登录 / 自动注册
-          </el-button>
-        </el-form>
-      </el-tab-pane>
+          </n-button>
+        </n-form>
+      </n-tab-pane>
 
-      <el-tab-pane label="账号密码" name="password">
-        <el-form ref="passwordFormRef" :model="passwordForm" :rules="passwordRules" label-position="top"
+      <n-tab-pane tab="账号密码" name="password">
+        <n-form ref="passwordFormRef" :model="passwordForm" :rules="passwordRules" label-placement="top"
           @submit.prevent="handlePasswordSubmit">
-          <el-form-item label="普通用户账号" prop="username">
-            <el-input v-model.trim="passwordForm.username" placeholder="请输入账号" size="large" clearable />
-          </el-form-item>
+          <n-form-item label="普通用户账号" path="username">
+            <n-input v-model:value="passwordForm.username" placeholder="请输入账号" size="large" clearable />
+          </n-form-item>
 
-          <el-form-item label="密码" prop="password">
-            <el-input v-model="passwordForm.password" placeholder="请输入密码" size="large" show-password clearable />
-          </el-form-item>
+          <n-form-item label="密码" path="password">
+            <n-input v-model:value="passwordForm.password" placeholder="请输入密码" size="large" type="password" show-password-on="click" clearable />
+          </n-form-item>
 
-          <el-button type="primary" size="large" class="auth-action" :loading="loading" @click="handlePasswordSubmit">
+          <n-button type="primary" size="large" class="auth-action" :loading="loading" @click="handlePasswordSubmit">
             登录
-          </el-button>
-        </el-form>
-      </el-tab-pane>
-    </el-tabs>
+          </n-button>
+        </n-form>
+      </n-tab-pane>
+    </n-tabs>
 
     <div class="auth-links">
       <router-link to="/admin/login">管理员入口</router-link>
@@ -235,7 +240,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   flex-wrap: wrap;
   margin-top: 18px;
-  color: #0f766e;
+  color: var(--wl-primary);
   font-size: 14px;
   font-weight: 600;
 }
@@ -249,12 +254,10 @@ onBeforeUnmount(() => {
   z-index: 1;
 }
 
-.guest-entry :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
-.guest-entry :deep(.el-button) {
-  background: rgba(255, 255, 255, 0.78);
+.guest-entry :deep(.n-button) {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 @media (max-width: 520px) {

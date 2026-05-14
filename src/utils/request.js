@@ -1,6 +1,6 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
 import { pinia, useUserStore } from '@/stores'
+import { message as feedbackMessage } from '@/utils/feedback'
 
 const targetBaseUrl = import.meta.env.VITE_API_BASE_URL
 const baseURL = import.meta.env.DEV ? '/api' : targetBaseUrl
@@ -30,7 +30,7 @@ function handleUnauthorized(message = '请先登录') {
   const userType = userStore.userType
 
   userStore.clearLogin()
-  ElMessage.error(message)
+  feedbackMessage.error(message)
   redirectToLogin(userType)
 }
 
@@ -56,7 +56,7 @@ instance.interceptors.response.use(
 
     if (payload?.code !== 200) {
       const message = payload?.msg || '请求失败'
-      ElMessage.error(message)
+      feedbackMessage.error(message)
       return Promise.reject(payload)
     }
 
@@ -74,7 +74,7 @@ instance.interceptors.response.use(
       message = '请求超时，请稍后重试'
     }
 
-    ElMessage.error(message)
+    feedbackMessage.error(message)
     return Promise.reject(error)
   },
 )
