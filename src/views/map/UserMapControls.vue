@@ -1,49 +1,66 @@
 <script setup>
 import {
   AddOutline,
-  ChevronDownOutline,
   FlagOutline,
+  InformationCircleOutline,
   LocateOutline,
-  LocationOutline,
-  MapOutline,
   NavigateOutline,
   RefreshOutline,
   RemoveOutline,
 } from '@vicons/ionicons5'
 
 defineProps({
-  scenicArea: {
-    type: Object,
-    default: null,
-  },
-  spotCount: {
-    type: Number,
-    default: 0,
-  },
-  routeCount: {
-    type: Number,
-    default: 0,
-  },
-  featureCount: {
-    type: Number,
-    default: 0,
-  },
   loading: {
     type: Boolean,
     default: false,
   },
-  panelOpen: {
+  infoOpen: {
     type: Boolean,
-    default: true,
+    default: false,
+  },
+  routeOpen: {
+    type: Boolean,
+    default: false,
   },
 })
 
-const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh', 'toggle-panel'])
+const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh', 'toggle-info', 'toggle-routes'])
 </script>
 
 <template>
-  <!-- 重点：右下角只保留高频地图操作，复杂信息统一交给 TouristMap 信息浮层承载。 -->
+  <!-- 重点：景区信息和推荐路线都做成地图工具式 icon 小组件，避免占用顶部标题栏。 -->
   <div class="user-map-controls pointer-events-auto">
+    <div class="user-map-controls__stack" aria-label="导游信息">
+      <n-tooltip placement="left">
+        <template #trigger>
+          <n-button
+            quaternary
+            circle
+            class="user-map-controls__button"
+            :class="{ 'user-map-controls__button--active': infoOpen }"
+            @click="emit('toggle-info')"
+          >
+            <template #icon><n-icon><InformationCircleOutline /></n-icon></template>
+          </n-button>
+        </template>
+        景区信息
+      </n-tooltip>
+      <n-tooltip placement="left">
+        <template #trigger>
+          <n-button
+            quaternary
+            circle
+            class="user-map-controls__button"
+            :class="{ 'user-map-controls__button--active': routeOpen }"
+            @click="emit('toggle-routes')"
+          >
+            <template #icon><n-icon><FlagOutline /></n-icon></template>
+          </n-button>
+        </template>
+        推荐路线
+      </n-tooltip>
+    </div>
+
     <div class="user-map-controls__stack" aria-label="地图缩放">
       <n-tooltip placement="left">
         <template #trigger>
@@ -89,19 +106,6 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
         刷新地图
       </n-tooltip>
     </div>
-
-    <button type="button" class="user-map-controls__summary" :aria-expanded="panelOpen" @click="emit('toggle-panel')">
-      <span class="user-map-controls__summary-title">
-        <n-icon><MapOutline /></n-icon>
-        地图说明
-      </span>
-      <span class="user-map-controls__summary-grid">
-        <span><n-icon><LocationOutline /></n-icon>{{ spotCount }} 个景点</span>
-        <span><n-icon><FlagOutline /></n-icon>{{ routeCount }} 条路线</span>
-        <span><n-icon><MapOutline /></n-icon>{{ featureCount }} 个要素</span>
-      </span>
-      <n-icon class="user-map-controls__chevron" :class="{ 'is-open': panelOpen }"><ChevronDownOutline /></n-icon>
-    </button>
   </div>
 </template>
 
@@ -137,54 +141,9 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
   background: #f8fafc;
 }
 
-.user-map-controls__summary {
-  display: none;
-  width: min(360px, calc(100vw - 32px));
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  padding: 12px 42px 12px 14px;
-  position: relative;
-  background: rgba(255, 255, 255, 0.94);
-  color: #0f172a;
-  text-align: left;
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.16);
-}
-
-.user-map-controls__summary-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 800;
-}
-
-.user-map-controls__summary:hover {
-  background: #f8fafc;
-}
-
-.user-map-controls__summary-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-top: 8px;
-  color: #475569;
-  font-size: 12px;
-}
-
-.user-map-controls__summary-grid span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.user-map-controls__chevron {
-  position: absolute;
-  top: 16px;
-  right: 14px;
-  transition: transform 0.2s ease;
-}
-
-.user-map-controls__chevron.is-open {
-  transform: rotate(180deg);
+.user-map-controls__button--active {
+  background: rgba(15, 118, 110, 0.1);
+  color: #0f766e;
 }
 
 @media (max-width: 768px) {
@@ -202,10 +161,6 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
   .user-map-controls__button {
     width: 38px;
     height: 38px;
-  }
-
-  .user-map-controls__summary {
-    display: none;
   }
 }
 </style>
