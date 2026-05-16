@@ -118,27 +118,28 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
 
 .user-map-controls__stack {
   display: grid;
-  overflow: hidden;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  overflow: visible;
+  border: 0;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.16);
+  background: transparent;
+  box-shadow: none;
 }
 
 .user-map-controls__button {
   width: 48px;
   height: 48px;
   border-radius: 0;
+  background: transparent;
   color: #0f172a;
 }
 
 .user-map-controls__stack :deep(.n-tooltip-trigger:not(:last-child)) .user-map-controls__button {
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  border-bottom: 0;
 }
 
 .user-map-controls__button:hover,
 .user-map-controls__button:focus-visible {
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .user-map-controls__button--active {

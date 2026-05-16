@@ -14,6 +14,7 @@ import UserProfileEdit from '@/views/user/UserProfileEdit.vue'
 
 const MapWorkspace = defineAsyncComponent(() => import('@/views/map/MapWorkspace.vue'))
 const TouristMap = defineAsyncComponent(() => import('@/views/map/TouristMap.vue'))
+const UserIndex = defineAsyncComponent(() => import('@/views/index/UserIndex.vue'))
 const ReservationDashboardScreen = defineAsyncComponent(() => import('@/views/reservation/ReservationDashboardScreen.vue'))
 const ReservationWorkspace = defineAsyncComponent(() => import('@/views/reservation/ReservationWorkspace.vue'))
 const UserReservationDashboardScreen = defineAsyncComponent(
@@ -22,15 +23,38 @@ const UserReservationDashboardScreen = defineAsyncComponent(
 
 const DEFAULT_AVATAR = '/default-avatar.svg'
 const MOBILE_BREAKPOINT = 1180
-const PUBLIC_MENU_KEYS = ['user-reservation-dashboard-screen', 'tourist-map']
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore(pinia)
 
+function getAvailableMenuKeys() {
+  if (!userStore.isLoggedIn) {
+    return ['user-index', 'user-reservation-dashboard-screen', 'tourist-map']
+  }
+
+  if (!userStore.isAdmin) {
+    return ['user-index', 'user-reservation-dashboard-screen', 'tourist-map', 'reservation-workspace', 'chat-page']
+  }
+
+  const keys = ['reservation-dashboard-screen', 'tourist-map']
+  if (userStore.isSuperAdmin) {
+    keys.push('daily-report', 'admin-create-page')
+  }
+  keys.push(
+    'map-workspace',
+    'reservation-workspace',
+    'user-admin-detail',
+    'user-normal-detail',
+    'user-admin-list',
+    'user-normal-list',
+  )
+  return keys
+}
+
 const getDefaultMenuKey = () => {
   const routeView = typeof route.query.view === 'string' ? route.query.view : ''
-  if (!userStore.isLoggedIn && PUBLIC_MENU_KEYS.includes(routeView)) return routeView
+  if (routeView && getAvailableMenuKeys().includes(routeView)) return routeView
   return userStore.isAdmin ? 'reservation-dashboard-screen' : 'user-reservation-dashboard-screen'
 }
 
@@ -73,6 +97,7 @@ const defaultMenuKey = computed(() =>
 const menuItems = computed(() => {
   if (isGuest.value) {
     return [
+      { key: 'user-index', label: '游客首页' },
       { key: 'user-reservation-dashboard-screen', label: '数据大屏' },
       { key: 'tourist-map', label: '导游地图' },
     ]
@@ -80,6 +105,7 @@ const menuItems = computed(() => {
 
   if (!userStore.isAdmin) {
     return [
+      { key: 'user-index', label: '游客首页' },
       { key: 'user-reservation-dashboard-screen', label: '数据大屏' },
       { key: 'tourist-map', label: '导游地图' },
       { key: 'reservation-workspace', label: '景点预约' },
@@ -340,7 +366,9 @@ onBeforeUnmount(() => {
           'dashboard-content__body--map': activeMenu === 'tourist-map',
           'dashboard-content__body--screen': isDashboardScreenMenu,
         }">
-          <UserProfileEdit v-if="activeMenu === 'profile-edit'" />
+          <UserIndex v-if="activeMenu === 'user-index'" />
+
+          <UserProfileEdit v-else-if="activeMenu === 'profile-edit'" />
 
           <Chat v-else-if="activeMenu === 'chat-page'" embedded @navigate="handleActionNavigate" />
 

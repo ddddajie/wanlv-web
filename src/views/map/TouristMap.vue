@@ -340,7 +340,7 @@ onMounted(fetchScenicOptions)
       </n-card>
     </header>
 
-    <aside class="pointer-events-none absolute bottom-4 right-4 z-[6]">
+    <aside class="pointer-events-none absolute right-1 top-4 z-[6]">
       <UserMapControls :loading="isLoadingMap" :info-open="isScenicInfoOpen" :route-open="isRoutePanelOpen"
         @zoom-in="mapCanvasRef?.zoomIn()" @zoom-out="mapCanvasRef?.zoomOut()" @fit-view="mapCanvasRef?.fitView()"
         @locate="mapCanvasRef?.locate()" @refresh="fetchMapData" @toggle-info="isScenicInfoOpen = !isScenicInfoOpen"
@@ -373,7 +373,7 @@ onMounted(fetchScenicOptions)
                 <span class="tourist-map__level-pill">{{ scenicLevelText }}</span>
                 <p class="tourist-map__info-desc">
                   {{ selectedSpot?.spotName ? `已选中：${selectedSpot.spotName}` : scenicArea?.description ||
-                  '这里会展示景区范围、景点、路线和服务设施，方便游客快速了解导览信息。' }}
+                    '这里会展示景区范围、景点、路线和服务设施，方便游客快速了解导览信息。' }}
                 </p>
               </div>
             </section>
@@ -464,24 +464,20 @@ onMounted(fetchScenicOptions)
         </header>
 
         <div v-if="recommendedRoutes.length" class="tourist-map__route-list">
-          <article
-            v-for="(item, index) in recommendedRoutes"
-            :key="item.id"
-            class="tourist-map__route-card"
-            :class="{
-              'tourist-map__route-card--active': isRouteVisible(item.id),
-              'tourist-map__route-card--disabled': !hasRouteGeojson(item),
-              'tourist-map__route-card--agent': item.routeType === 'agent_custom',
-              'tourist-map__route-card--green': item.routeType !== 'agent_custom' && index % 2 === 1,
-            }"
-          >
+          <article v-for="(item, index) in recommendedRoutes" :key="item.id" class="tourist-map__route-card" :class="{
+            'tourist-map__route-card--active': isRouteVisible(item.id),
+            'tourist-map__route-card--disabled': !hasRouteGeojson(item),
+            'tourist-map__route-card--agent': item.routeType === 'agent_custom',
+            'tourist-map__route-card--green': item.routeType !== 'agent_custom' && index % 2 === 1,
+          }">
             <div class="tourist-map__route-card-top">
               <div class="tourist-map__route-main">
                 <h3 class="tourist-map__route-name">{{ item.routeName || '未命名路线' }}</h3>
 
                 <!-- 重点：路线卡片展示层只做字段兜底，不改变后端路线数据结构。 -->
                 <div class="tourist-map__route-meta">
-                  <span v-for="tag in getRouteTags(item)" :key="`${item.id}-${tag}`" class="tourist-map__route-meta-tag">
+                  <span v-for="tag in getRouteTags(item)" :key="`${item.id}-${tag}`"
+                    class="tourist-map__route-meta-tag">
                     <n-icon>
                       <TimeOutline v-if="tag === formatRouteDuration(item)" />
                       <SparklesOutline v-else-if="item.routeType === 'agent_custom'" />
@@ -501,12 +497,8 @@ onMounted(fetchScenicOptions)
                   </n-icon>
                   {{ hasRouteGeojson(item) ? (isRouteVisible(item.id) ? '地图可见' : '点击切换') : '未配置轨迹' }}
                 </span>
-                <button
-                  class="tourist-map__route-show"
-                  type="button"
-                  :disabled="!hasRouteGeojson(item)"
-                  @click="toggleRoute(item.id)"
-                >
+                <button class="tourist-map__route-show" type="button" :disabled="!hasRouteGeojson(item)"
+                  @click="toggleRoute(item.id)">
                   {{ hasRouteGeojson(item) ? (isRouteVisible(item.id) ? '已显示' : '显示路线') : '不可显示' }}
                 </button>
               </div>

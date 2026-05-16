@@ -14,7 +14,6 @@ const app = createApp(App)
 pinia.use(piniaPluginPersistedstate)
 
 app.use(naive)
-// 重点：Element Plus 暂时保留为兼容层，业务页迁移完成后再移除。
 app.use(ElementPlus, { locale: zhCn })
 app.use(pinia)
 app.use(router)
