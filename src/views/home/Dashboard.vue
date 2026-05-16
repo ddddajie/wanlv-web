@@ -305,14 +305,8 @@ onBeforeUnmount(() => {
           <span class="dashboard-sidebar__title">菜单栏</span>
         </div>
 
-        <n-menu
-          v-model:value="activeMenu"
-          class="dashboard-menu"
-          :options="menuOptions"
-          :indent="12"
-          :collapsed-width="64"
-          @update:value="handleMenuSelect"
-        />
+        <n-menu v-model:value="activeMenu" class="dashboard-menu" :options="menuOptions" :indent="12"
+          :collapsed-width="64" @update:value="handleMenuSelect" />
       </aside>
 
       <transition name="dashboard-sidebar-mask">
@@ -331,9 +325,14 @@ onBeforeUnmount(() => {
             </button>
 
             <div>
-              <p class="dashboard-content__eyebrow">当前模块</p>
               <h2 class="dashboard-content__title">{{ currentMenuLabel }}</h2>
             </div>
+
+            <div
+              v-if="activeMenu === 'tourist-map'"
+              id="dashboard-tourist-map-toolbar"
+              class="dashboard-content__header-tools"
+            ></div>
           </div>
         </header>
 
@@ -345,7 +344,11 @@ onBeforeUnmount(() => {
 
           <Chat v-else-if="activeMenu === 'chat-page'" embedded @navigate="handleActionNavigate" />
 
-          <TouristMap v-else-if="activeMenu === 'tourist-map'" />
+          <TouristMap
+            v-else-if="activeMenu === 'tourist-map'"
+            class="dashboard-content__map-view"
+            header-target="#dashboard-tourist-map-toolbar"
+          />
 
           <ReservationWorkspace v-else-if="activeMenu === 'reservation-workspace'" />
 
@@ -403,10 +406,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
+  z-index: 8;
   min-height: 0;
   padding: 16px 12px;
   border-radius: 0;
-  background: #f8fafc;
+  background: #f8fafc !important;
   color: #0f172a;
   box-shadow: 8px 0 20px rgba(15, 23, 42, 0.04);
   overflow: hidden;
@@ -445,14 +450,14 @@ onBeforeUnmount(() => {
 
 .dashboard-user__meta strong {
   color: #0f172a;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.3;
   word-break: break-word;
 }
 
 .dashboard-user__meta span {
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
   word-break: break-word;
 }
 
@@ -465,12 +470,12 @@ onBeforeUnmount(() => {
 
 .dashboard-user__identity span {
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .dashboard-user__identity strong {
   color: #0f766e;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -486,12 +491,12 @@ onBeforeUnmount(() => {
 
 .dashboard-guest strong {
   color: #0f172a;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .dashboard-guest span {
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -501,7 +506,7 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-user__actions :deep(.n-button) {
-  --n-font-size: 12px;
+  --n-font-size: 13px;
   --n-height: 28px;
 }
 
@@ -520,7 +525,7 @@ onBeforeUnmount(() => {
 
 .dashboard-sidebar__title {
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
 }
@@ -561,16 +566,16 @@ onBeforeUnmount(() => {
 .dashboard-menu :deep(.n-menu-item-content-header),
 .dashboard-menu :deep(.n-menu-item-content__arrow) {
   color: #0f172a;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 
 .dashboard-menu :deep(.n-menu-item-content) {
-  min-height: 34px;
+  min-height: 38px;
   margin: 1px 0;
   border-radius: 4px;
   padding-right: 8px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .dashboard-menu :deep(.n-menu-item-content::before) {
@@ -591,7 +596,7 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-menu :deep(.n-submenu .n-menu-item-content-header) {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .dashboard-sidebar__mask {
@@ -607,10 +612,13 @@ onBeforeUnmount(() => {
 .dashboard-content {
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 1;
   min-width: 0;
   min-height: 0;
-  gap: 10px;
-  padding-left: 14px;
+  gap: 0;
+  padding-left: 0;
+  background: #f8fafc;
   overflow: hidden;
 }
 
@@ -621,13 +629,28 @@ onBeforeUnmount(() => {
 
 .dashboard-content__header {
   flex: 0 0 auto;
-  padding: 4px 6px 0;
+  display: flex;
+  align-items: center;
+  position: relative;
+  z-index: 7;
+  min-height: 54px;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0;
+  padding: 0 24px;
+  background: #fff;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .dashboard-content__header-main {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 14px;
+  width: 100%;
+  min-width: 0;
 }
 
 .dashboard-content__menu-toggle {
@@ -666,8 +689,17 @@ onBeforeUnmount(() => {
 .dashboard-content__title {
   margin: 0;
   color: #0f172a;
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1.15;
+  text-align: left;
+}
+
+.dashboard-content__header-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  margin-left: auto;
 }
 
 .dashboard-content__body {
@@ -676,11 +708,27 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 20px;
   overflow: auto;
-  padding: 0 6px 6px;
+  padding: 16px 18px 18px 22px;
 }
 
 .dashboard-content__body--map {
+  display: block;
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
+  padding: 16px 18px 18px 22px;
+  background: #f8fafc;
+}
+
+.dashboard-content__map-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 .dashboard-content__body--screen {
@@ -757,6 +805,11 @@ onBeforeUnmount(() => {
     padding: 0;
   }
 
+  .dashboard-content {
+    gap: 0;
+    padding-left: 0;
+  }
+
   .dashboard-sidebar {
     padding: 18px;
   }
@@ -771,7 +824,63 @@ onBeforeUnmount(() => {
   }
 
   .dashboard-content__header {
-    padding-top: 0;
+    display: flex;
+    align-items: center;
+    height: 34px;
+    margin: 0;
+    border: 0;
+    border-bottom: 1px solid #e5e7eb;
+    border-radius: 0;
+    padding: 0 12px;
+    background: #fff;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .dashboard-content__header-main {
+    gap: 10px;
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+  }
+
+  .dashboard-content__menu-toggle {
+    flex: 0 0 26px;
+    gap: 3px;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .dashboard-content__menu-toggle span {
+    width: 13px;
+    height: 1.5px;
+  }
+
+  .dashboard-content__title {
+    overflow: hidden;
+    color: #111827;
+    font-size: 15px;
+    line-height: 1;
+    text-align: left;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .dashboard-content__header-tools {
+    flex: 1;
+  }
+
+  .dashboard-content__body {
+    padding-top: 10px;
+  }
+
+  .dashboard-content__body--map {
+    padding: 10px 10px 10px;
   }
 }
 </style>

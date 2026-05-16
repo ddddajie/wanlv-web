@@ -1,15 +1,15 @@
 <script setup>
 import {
-  Aim,
-  ArrowDown,
-  Flag,
-  Location,
-  MapLocation,
-  Minus,
-  Place,
-  Plus,
-  Refresh,
-} from '@element-plus/icons-vue'
+  AddOutline,
+  ChevronDownOutline,
+  FlagOutline,
+  LocateOutline,
+  LocationOutline,
+  MapOutline,
+  NavigateOutline,
+  RefreshOutline,
+  RemoveOutline,
+} from '@vicons/ionicons5'
 
 defineProps({
   scenicArea: {
@@ -42,49 +42,65 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
 </script>
 
 <template>
-  <div class="user-map-controls">
+  <!-- 重点：右下角只保留高频地图操作，复杂信息统一交给 TouristMap 信息浮层承载。 -->
+  <div class="user-map-controls pointer-events-auto">
     <div class="user-map-controls__stack" aria-label="地图缩放">
-      <el-tooltip content="放大地图" placement="left">
-        <button type="button" class="user-map-controls__button" @click="emit('zoom-in')">
-          <el-icon><Plus /></el-icon>
-        </button>
-      </el-tooltip>
-      <el-tooltip content="缩小地图" placement="left">
-        <button type="button" class="user-map-controls__button" @click="emit('zoom-out')">
-          <el-icon><Minus /></el-icon>
-        </button>
-      </el-tooltip>
+      <n-tooltip placement="left">
+        <template #trigger>
+          <n-button quaternary circle class="user-map-controls__button" @click="emit('zoom-in')">
+            <template #icon><n-icon><AddOutline /></n-icon></template>
+          </n-button>
+        </template>
+        放大地图
+      </n-tooltip>
+      <n-tooltip placement="left">
+        <template #trigger>
+          <n-button quaternary circle class="user-map-controls__button" @click="emit('zoom-out')">
+            <template #icon><n-icon><RemoveOutline /></n-icon></template>
+          </n-button>
+        </template>
+        缩小地图
+      </n-tooltip>
     </div>
 
     <div class="user-map-controls__stack" aria-label="地图工具">
-      <el-tooltip content="回到景区" placement="left">
-        <button type="button" class="user-map-controls__button" @click="emit('fit-view')">
-          <el-icon><Aim /></el-icon>
-        </button>
-      </el-tooltip>
-      <el-tooltip content="定位" placement="left">
-        <button type="button" class="user-map-controls__button" @click="emit('locate')">
-          <el-icon><Location /></el-icon>
-        </button>
-      </el-tooltip>
-      <el-tooltip content="刷新地图" placement="left">
-        <button type="button" class="user-map-controls__button" :disabled="loading" @click="emit('refresh')">
-          <el-icon :class="{ 'is-loading': loading }"><Refresh /></el-icon>
-        </button>
-      </el-tooltip>
+      <n-tooltip placement="left">
+        <template #trigger>
+          <n-button quaternary circle class="user-map-controls__button" @click="emit('fit-view')">
+            <template #icon><n-icon><NavigateOutline /></n-icon></template>
+          </n-button>
+        </template>
+        回到景区
+      </n-tooltip>
+      <n-tooltip placement="left">
+        <template #trigger>
+          <n-button quaternary circle class="user-map-controls__button" @click="emit('locate')">
+            <template #icon><n-icon><LocateOutline /></n-icon></template>
+          </n-button>
+        </template>
+        定位
+      </n-tooltip>
+      <n-tooltip placement="left">
+        <template #trigger>
+          <n-button quaternary circle class="user-map-controls__button" :loading="loading" :disabled="loading" @click="emit('refresh')">
+            <template #icon><n-icon><RefreshOutline /></n-icon></template>
+          </n-button>
+        </template>
+        刷新地图
+      </n-tooltip>
     </div>
 
-    <button type="button" class="user-map-controls__summary" @click="emit('toggle-panel')">
+    <button type="button" class="user-map-controls__summary" :aria-expanded="panelOpen" @click="emit('toggle-panel')">
       <span class="user-map-controls__summary-title">
-        <el-icon><MapLocation /></el-icon>
+        <n-icon><MapOutline /></n-icon>
         地图说明
       </span>
       <span class="user-map-controls__summary-grid">
-        <span><el-icon><Place /></el-icon>{{ spotCount }} 个景点</span>
-        <span><el-icon><Flag /></el-icon>{{ routeCount }} 条路线</span>
-        <span><el-icon><MapLocation /></el-icon>{{ featureCount }} 个要素</span>
+        <span><n-icon><LocationOutline /></n-icon>{{ spotCount }} 个景点</span>
+        <span><n-icon><FlagOutline /></n-icon>{{ routeCount }} 条路线</span>
+        <span><n-icon><MapOutline /></n-icon>{{ featureCount }} 个要素</span>
       </span>
-      <el-icon class="user-map-controls__chevron" :class="{ 'is-open': panelOpen }"><ArrowDown /></el-icon>
+      <n-icon class="user-map-controls__chevron" :class="{ 'is-open': panelOpen }"><ChevronDownOutline /></n-icon>
     </button>
   </div>
 </template>
@@ -94,7 +110,6 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
   display: grid;
   gap: 12px;
   justify-items: end;
-  pointer-events: auto;
 }
 
 .user-map-controls__stack {
@@ -107,31 +122,18 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
 }
 
 .user-map-controls__button {
-  display: grid;
-  place-items: center;
   width: 48px;
   height: 48px;
-  border: 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  background: transparent;
+  border-radius: 0;
   color: #0f172a;
-  cursor: pointer;
 }
 
-.user-map-controls__button:last-child {
-  border-bottom: 0;
+.user-map-controls__stack :deep(.n-tooltip-trigger:not(:last-child)) .user-map-controls__button {
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
 }
 
-.user-map-controls__button:disabled {
-  color: #94a3b8;
-  cursor: wait;
-}
-
-.user-map-controls__button .el-icon {
-  font-size: 28px;
-}
-
-.user-map-controls__button:hover {
+.user-map-controls__button:hover,
+.user-map-controls__button:focus-visible {
   background: #f8fafc;
 }
 
@@ -153,6 +155,10 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
   align-items: center;
   gap: 6px;
   font-weight: 800;
+}
+
+.user-map-controls__summary:hover {
+  background: #f8fafc;
 }
 
 .user-map-controls__summary-grid {
@@ -181,16 +187,6 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
   transform: rotate(180deg);
 }
 
-.is-loading {
-  animation: user-map-spin 0.8s linear infinite;
-}
-
-@keyframes user-map-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (max-width: 768px) {
   .user-map-controls {
     width: auto;
@@ -206,10 +202,6 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
   .user-map-controls__button {
     width: 38px;
     height: 38px;
-  }
-
-  .user-map-controls__button .el-icon {
-    font-size: 22px;
   }
 
   .user-map-controls__summary {

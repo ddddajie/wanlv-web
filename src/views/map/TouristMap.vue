@@ -1,23 +1,29 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import {
-  ArrowDown,
-  ChatDotRound,
-  Clock,
-  Flag,
-  Location,
-  MapLocation,
-  Place,
-  Tickets,
-} from '@element-plus/icons-vue'
+  ChatbubbleEllipsesOutline,
+  ChevronDownOutline,
+  FlagOutline,
+  LocationOutline,
+  MapOutline,
+  TicketOutline,
+  TimeOutline,
+} from '@vicons/ionicons5'
 import { getLatestAgentRouteGeoApi, getMapInitApi, pageScenicAreasApi } from '@/api/map'
 import { useScenicWarmReminder } from '@/composables/useScenicWarmReminder'
 import { pinia, useUserStore } from '@/stores'
+import { message } from '@/utils/feedback'
 import MapCanvas from './MapCanvas.vue'
 import UserMapControls from './UserMapControls.vue'
 import { normalizePageResult } from './mapUtils'
+
+defineProps({
+  headerTarget: {
+    type: String,
+    default: '',
+  },
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -54,6 +60,14 @@ const enabledScenicOptions = computed(() =>
   scenicOptions.value.filter((item) => Number(item.status) === 1 || Number(item.id) === Number(selectedScenicId.value)),
 )
 
+// 重点：Naive UI Select 使用统一的 label/value 结构，避免模板里重复转换景区数据。
+const scenicSelectOptions = computed(() =>
+  enabledScenicOptions.value.map((item) => ({
+    label: item.scenicName,
+    value: item.id,
+  })),
+)
+
 const officialRoutes = computed(() =>
   routes.value.filter((item) => String(item.routeType || '').trim().toLowerCase() === 'official'),
 )
@@ -80,13 +94,13 @@ useScenicWarmReminder({
 })
 
 const mapLegendItems = [
-  { label: '景点标记', type: 'dot', className: 'tourist-map__dot--spot' },
-  { label: '导览路线', type: 'dot', className: 'tourist-map__dot--route' },
-  { label: '景区范围', type: 'dot', className: 'tourist-map__dot--area' },
-  { label: '步行道路', type: 'line', className: 'tourist-map__line--walk' },
-  { label: '车行道路', type: 'line', className: 'tourist-map__line--drive' },
-  { label: '游览步道', type: 'line', className: 'tourist-map__line--tour' },
-  { label: '服务通道', type: 'line', className: 'tourist-map__line--service' },
+  { label: '景点标记', type: 'dot', className: 'bg-teal-600' },
+  { label: '导览路线', type: 'dot', className: 'bg-orange-500' },
+  { label: '景区范围', type: 'dot', className: 'bg-sky-600' },
+  { label: '步行道路', type: 'line', className: 'bg-slate-300' },
+  { label: '车行道路', type: 'line', className: 'bg-orange-300' },
+  { label: '游览步道', type: 'line', className: 'bg-emerald-300' },
+  { label: '服务通道', type: 'line', className: 'bg-sky-300' },
 ]
 
 function readScenicNameCache() {
@@ -209,7 +223,7 @@ async function fetchMapData() {
     mapCanvasRef.value?.resize()
   } catch (error) {
     console.error('Failed to load tourist map:', error)
-    ElMessage.error('景区地图加载失败，请稍后再试')
+    message.error('景区地图加载失败，请稍后再试')
   } finally {
     isLoadingMap.value = false
   }
@@ -223,7 +237,7 @@ function handleScenicChange(value) {
 function handleAskAi() {
   const scenicAreaId = Number(selectedScenicId.value)
   if (!Number.isFinite(scenicAreaId) || scenicAreaId <= 0) {
-    ElMessage.warning('请先选择景区，再进入智能问答。')
+    message.warning('请先选择景区，再进入智能问答。')
     return
   }
 
@@ -257,7 +271,7 @@ function handleSpotClick(id) {
 function toggleRoute(routeId) {
   const route = recommendedRoutes.value.find((item) => String(item.id) === String(routeId))
   if (!hasRouteGeojson(route)) {
-    ElMessage.warning('该路线暂未配置轨迹')
+    message.warning('该路线暂未配置轨迹')
     return
   }
 
@@ -294,8 +308,8 @@ onMounted(fetchScenicOptions)
 </script>
 
 <template>
-  <section class="tourist-map">
-    <div class="tourist-map__canvas" v-loading="isLoadingMap">
+  <section class="tourist-map relative h-full min-h-0 overflow-hidden bg-slate-200">
+    <n-spin :show="isLoadingMap" class="tourist-map__spin">
       <MapCanvas
         ref="mapCanvasRef"
         :map-data="displayMapData"
@@ -305,45 +319,63 @@ onMounted(fetchScenicOptions)
         @spot-click="handleSpotClick"
       />
 
-      <div v-if="!mapData && !isLoadingMap" class="tourist-map__empty">
-        <el-empty description="请选择景区查看导游地图" :image-size="92" />
+      <div v-if="!mapData && !isLoadingMap" class="tourist-map__empty absolute inset-0 grid place-items-center bg-slate-50/90">
+        <n-empty description="请选择景区查看导游地图" />
       </div>
-    </div>
+    </n-spin>
 
-    <header class="tourist-map__topbar">
-      <div class="tourist-map__switcher">
-        <span class="tourist-map__brand-icon">
-          <el-icon><MapLocation /></el-icon>
-        </span>
+    <Teleport v-if="headerTarget" :to="headerTarget">
+      <div class="tourist-map__titlebar-control">
+        <n-select
+          v-model:value="selectedScenicId"
+          class="tourist-map__titlebar-select"
+          :options="scenicSelectOptions"
+          :loading="isLoadingScenic"
+          filterable
+          placeholder="切换景区"
+          @update:value="handleScenicChange"
+        />
 
-        <div class="tourist-map__switcher-main">
-          <span>Wanlv Guide Map</span>
-          <el-select
-            v-model="selectedScenicId"
-            class="tourist-map__select"
-            :loading="isLoadingScenic"
-            placeholder="切换景区"
-            @change="handleScenicChange"
-          >
-            <el-option
-              v-for="item in enabledScenicOptions"
-              :key="item.id"
-              :label="item.scenicName"
-              :value="item.id"
+        <n-button quaternary class="tourist-map__top-info" @click="isInfoPanelOpen = !isInfoPanelOpen">
+          <span><n-icon><LocationOutline /></n-icon>{{ spots.length }}</span>
+          <span><n-icon><FlagOutline /></n-icon>{{ displayRoutes.length }}</span>
+          <span><n-icon><TicketOutline /></n-icon>{{ geoFeatures.length }}</span>
+          <n-icon class="transition-transform" :class="{ 'rotate-180': isInfoPanelOpen }"><ChevronDownOutline /></n-icon>
+        </n-button>
+      </div>
+    </Teleport>
+
+    <header v-else class="pointer-events-none absolute left-4 right-4 top-4 z-[5]">
+      <n-card class="tourist-map__top-card pointer-events-auto" size="small" :bordered="false">
+        <div class="flex min-w-0 items-center gap-3">
+          <span class="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-teal-700 text-white shadow-sm">
+            <n-icon :size="22"><MapOutline /></n-icon>
+          </span>
+
+          <div class="grid min-w-0 flex-1 gap-1">
+            <span class="text-xs leading-none text-slate-500">Wanlv Guide Map</span>
+            <n-select
+              v-model:value="selectedScenicId"
+              class="tourist-map__select"
+              :options="scenicSelectOptions"
+              :loading="isLoadingScenic"
+              filterable
+              placeholder="切换景区"
+              @update:value="handleScenicChange"
             />
-          </el-select>
-        </div>
+          </div>
 
-        <button type="button" class="tourist-map__top-info" @click="isInfoPanelOpen = !isInfoPanelOpen">
-          <span><el-icon><Place /></el-icon>{{ spots.length }}</span>
-          <span><el-icon><Flag /></el-icon>{{ displayRoutes.length }}</span>
-          <span><el-icon><Tickets /></el-icon>{{ geoFeatures.length }}</span>
-          <el-icon class="tourist-map__top-info-arrow" :class="{ 'is-open': isInfoPanelOpen }"><ArrowDown /></el-icon>
-        </button>
-      </div>
+          <n-button quaternary class="tourist-map__top-info" @click="isInfoPanelOpen = !isInfoPanelOpen">
+            <span><n-icon><LocationOutline /></n-icon>{{ spots.length }}</span>
+            <span><n-icon><FlagOutline /></n-icon>{{ displayRoutes.length }}</span>
+            <span><n-icon><TicketOutline /></n-icon>{{ geoFeatures.length }}</span>
+            <n-icon class="transition-transform" :class="{ 'rotate-180': isInfoPanelOpen }"><ChevronDownOutline /></n-icon>
+          </n-button>
+        </div>
+      </n-card>
     </header>
 
-    <aside class="tourist-map__floating">
+    <aside class="pointer-events-none absolute bottom-4 right-4 z-[6]">
       <UserMapControls
         :scenic-area="scenicArea"
         :spot-count="spots.length"
@@ -361,227 +393,182 @@ onMounted(fetchScenicOptions)
     </aside>
 
     <transition name="tourist-map-panel">
-      <section v-show="isInfoPanelOpen" class="tourist-map__panel">
-        <button type="button" class="tourist-map__panel-toggle" @click="isInfoPanelOpen = false">
-          <el-icon><ArrowDown /></el-icon>
-        </button>
+      <n-card v-show="isInfoPanelOpen" class="tourist-map__panel" :bordered="false">
+        <template #header>
+          <div class="min-w-0 pr-9">
+            <p class="m-0 text-xs text-slate-500">当前景区</p>
+            <h1 class="m-0 mt-1 text-2xl font-bold leading-tight text-slate-950">{{ scenicArea?.scenicName || '请选择景区' }}</h1>
+          </div>
+        </template>
+        <template #header-extra>
+          <n-button quaternary circle aria-label="收起景区信息" @click="isInfoPanelOpen = false">
+            <template #icon><n-icon><ChevronDownOutline /></n-icon></template>
+          </n-button>
+        </template>
 
-        <div class="tourist-map__panel-head">
-          <p>当前景区</p>
-          <h1>{{ scenicArea?.scenicName || '请选择景区' }}</h1>
-          <span>
-            <el-icon><Location /></el-icon>
-            {{ scenicLocationText }}
-          </span>
-        </div>
+        <div class="grid gap-4">
+          <n-space align="center" :wrap="false" class="min-w-0 text-slate-600">
+            <n-icon><LocationOutline /></n-icon>
+            <span class="truncate text-sm">{{ scenicLocationText }}</span>
+          </n-space>
 
-        <div class="tourist-map__quick-info">
-          <span><el-icon><Place /></el-icon>{{ spots.length }} 个景点</span>
-          <span><el-icon><Flag /></el-icon>{{ displayRoutes.length }} 条路线</span>
-          <span><el-icon><Tickets /></el-icon>{{ geoFeatures.length }} 个要素</span>
-        </div>
+          <div class="grid grid-cols-3 gap-2 max-sm:grid-cols-1">
+            <div class="tourist-map__stat"><n-icon><LocationOutline /></n-icon><span>{{ spots.length }} 个景点</span></div>
+            <div class="tourist-map__stat"><n-icon><FlagOutline /></n-icon><span>{{ displayRoutes.length }} 条路线</span></div>
+            <div class="tourist-map__stat"><n-icon><TicketOutline /></n-icon><span>{{ geoFeatures.length }} 个要素</span></div>
+          </div>
 
-        <div class="tourist-map__actions">
-          <el-button type="primary" round @click="handleAskAi">
-            <el-icon><ChatDotRound /></el-icon>
+          <n-button type="primary" size="large" round block @click="handleAskAi">
+            <template #icon><n-icon><ChatbubbleEllipsesOutline /></n-icon></template>
             咨询智能问答
-          </el-button>
-        </div>
+          </n-button>
 
-        <p class="tourist-map__description">
-          {{ selectedSpot?.spotName ? `已选中：${selectedSpot.spotName}` : scenicArea?.description || '这里会展示景区范围、景点、路线和服务设施，方便游客在手机端快速了解导览信息。' }}
-        </p>
+          <p class="m-0 text-sm leading-7 text-slate-700">
+            {{ selectedSpot?.spotName ? `已选中：${selectedSpot.spotName}` : scenicArea?.description || '这里会展示景区范围、景点、路线和服务设施，方便游客在手机端快速了解导览信息。' }}
+          </p>
 
-        <div class="tourist-map__section">
-          <div class="tourist-map__section-title">
-            <span>推荐路线</span>
-            <small>点击开关显示</small>
-          </div>
-          <div v-if="recommendedRoutes.length" class="tourist-map__route-list">
-            <button
-              v-for="item in recommendedRoutes"
-              :key="item.id"
-              type="button"
-              class="tourist-map__route"
-              :class="{
-                'is-active': isRouteVisible(item.id),
-                'is-disabled': !hasRouteGeojson(item),
-                'is-agent-route': item.routeType === 'agent_custom',
-              }"
-              @click="toggleRoute(item.id)"
-            >
-              <span>{{ item.routeName || '未命名路线' }}</span>
-              <strong>{{ hasRouteGeojson(item) ? (isRouteVisible(item.id) ? '点击隐藏' : '点击显示') : '未配置轨迹' }}</strong>
-            </button>
-          </div>
-          <p v-else-if="isLoadingAgentRoute" class="tourist-map__muted">正在加载专属路线...</p>
-          <p v-else class="tourist-map__muted">当前景区暂无推荐路线。</p>
-        </div>
+          <section class="grid gap-2">
+            <div class="flex items-baseline justify-between gap-3">
+              <h2 class="m-0 text-base font-bold text-slate-950">推荐路线</h2>
+              <small class="text-xs text-slate-500">点击开关显示</small>
+            </div>
+            <div v-if="recommendedRoutes.length" class="grid gap-2">
+              <button
+                v-for="item in recommendedRoutes"
+                :key="item.id"
+                type="button"
+                class="tourist-map__route"
+                :class="{
+                  'tourist-map__route--active': isRouteVisible(item.id),
+                  'tourist-map__route--disabled': !hasRouteGeojson(item),
+                  'tourist-map__route--agent': item.routeType === 'agent_custom',
+                }"
+                @click="toggleRoute(item.id)"
+              >
+                <span class="truncate">{{ item.routeName || '未命名路线' }}</span>
+                <n-tag :type="isRouteVisible(item.id) ? 'success' : 'default'" size="small" round>
+                  {{ hasRouteGeojson(item) ? (isRouteVisible(item.id) ? '已显示' : '可显示') : '未配置' }}
+                </n-tag>
+              </button>
+            </div>
+            <p v-else-if="isLoadingAgentRoute" class="m-0 text-sm text-slate-400">正在加载专属路线...</p>
+            <p v-else class="m-0 text-sm text-slate-400">当前景区暂无推荐路线。</p>
+          </section>
 
-        <div class="tourist-map__section">
-          <div class="tourist-map__section-title">
-            <span>地图功能说明</span>
-            <small>游客端展示重点</small>
-          </div>
-          <div class="tourist-map__legend">
-            <span v-for="item in mapLegendItems" :key="item.label">
-              <i v-if="item.type === 'line'" class="tourist-map__line" :class="item.className"></i>
-              <i v-else class="tourist-map__dot" :class="item.className"></i>
-              {{ item.label }}
-            </span>
-          </div>
-        </div>
+          <section class="grid gap-2">
+            <div class="flex items-baseline justify-between gap-3">
+              <h2 class="m-0 text-base font-bold text-slate-950">地图图例</h2>
+              <small class="text-xs text-slate-500">游客端展示重点</small>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <n-tag v-for="item in mapLegendItems" :key="item.label" round :bordered="false">
+                <template #icon>
+                  <i v-if="item.type === 'line'" class="h-1 w-8 rounded-full" :class="item.className"></i>
+                  <i v-else class="h-2.5 w-2.5 rounded-full" :class="item.className"></i>
+                </template>
+                {{ item.label }}
+              </n-tag>
+            </div>
+          </section>
 
-        <div class="tourist-map__section tourist-map__section--spots">
-          <div class="tourist-map__section-title">
-            <span>推荐景点</span>
-            <small>{{ selectedSpot?.spotName || '点击地图标记查看' }}</small>
-          </div>
-          <div v-if="highlightedSpots.length" class="tourist-map__spot-list">
-            <span v-for="item in highlightedSpots" :key="item.id">{{ item.spotName || '未命名景点' }}</span>
-          </div>
-          <p v-else class="tourist-map__muted">当前景区暂无景点类型的推荐数据。</p>
-        </div>
+          <section class="grid gap-2">
+            <div class="flex items-baseline justify-between gap-3">
+              <h2 class="m-0 text-base font-bold text-slate-950">推荐景点</h2>
+              <small class="truncate text-xs text-slate-500">{{ selectedSpot?.spotName || '点击地图标记查看' }}</small>
+            </div>
+            <div v-if="highlightedSpots.length" class="flex flex-wrap gap-2">
+              <n-tag v-for="item in highlightedSpots" :key="item.id" round>{{ item.spotName || '未命名景点' }}</n-tag>
+            </div>
+            <p v-else class="m-0 text-sm text-slate-400">当前景区暂无景点类型的推荐数据。</p>
+          </section>
 
-        <div v-if="scenicArea?.openingHours" class="tourist-map__hours">
-          <el-icon><Clock /></el-icon>
-          {{ scenicArea.openingHours }}
+          <n-alert v-if="scenicArea?.openingHours" type="warning" :bordered="false">
+            <template #icon><n-icon><TimeOutline /></n-icon></template>
+            {{ scenicArea.openingHours }}
+          </n-alert>
         </div>
-      </section>
+      </n-card>
     </transition>
   </section>
 </template>
 
 <style scoped>
 .tourist-map {
-  position: relative;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
   border-radius: 24px;
-  background: #e5edf3;
   box-shadow: 0 24px 58px rgba(15, 23, 42, 0.16);
+  contain: layout paint;
 }
 
-.tourist-map__canvas {
+.tourist-map__spin,
+.tourist-map__spin :deep(.n-spin-content),
+.tourist-map__spin :deep(.map-canvas) {
+  height: 100%;
+}
+
+.tourist-map__spin {
   position: absolute;
   inset: 0;
   overflow: hidden;
 }
 
-.tourist-map__canvas :deep(.map-canvas) {
-  height: 100%;
+.tourist-map__top-card {
+  width: min(620px, 100%);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(16px);
 }
 
-.tourist-map__empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(248, 250, 252, 0.88);
+.tourist-map__top-card :deep(.n-card__content) {
+  padding: 10px 12px;
 }
 
-.tourist-map__topbar {
-  position: absolute;
-  top: 18px;
-  left: 18px;
-  right: 18px;
-  z-index: 5;
-  pointer-events: none;
-}
-
-.tourist-map__switcher {
+.tourist-map__titlebar-control {
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: min(620px, 100%);
+  gap: 10px;
+  width: min(560px, 100%);
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.14);
-  pointer-events: auto;
 }
 
-.tourist-map__brand-icon {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  border-radius: 8px;
-  background: #0f766e;
-  color: #ffffff;
+.tourist-map__titlebar-select {
+  width: min(340px, 42vw);
+  min-width: 220px;
 }
 
-.tourist-map__switcher-main {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-
-.tourist-map__switcher-main > span {
-  display: block;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.tourist-map__select {
-  width: 100%;
-}
-
-.tourist-map__select :deep(.el-select__wrapper) {
-  min-height: 28px;
-  padding: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.tourist-map__select :deep(.el-select__selected-item) {
-  min-width: 0;
-  color: #0f172a;
-  font-size: 18px;
+.tourist-map__select :deep(.n-base-selection) {
+  --n-height: 30px;
+  --n-border: 0;
+  --n-border-hover: 0;
+  --n-border-focus: 0;
+  --n-box-shadow-focus: none;
+  --n-color: transparent;
+  --n-padding-single: 0;
+  --n-font-size: 18px;
   font-weight: 800;
 }
 
 .tourist-map__top-info {
+  min-width: 148px;
+  border-left: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+.tourist-map__top-info :deep(.n-button__content) {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-height: 38px;
-  border: 0;
-  border-left: 1px solid #e2e8f0;
-  padding: 0 4px 0 14px;
-  background: transparent;
-  color: #475569;
-  cursor: pointer;
 }
 
 .tourist-map__top-info span {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
   font-size: 12px;
   white-space: nowrap;
-}
-
-.tourist-map__top-info-arrow {
-  transition: transform 0.2s ease;
-}
-
-.tourist-map__top-info-arrow.is-open {
-  transform: rotate(180deg);
-}
-
-.tourist-map__floating {
-  position: absolute;
-  right: 18px;
-  bottom: 18px;
-  z-index: 6;
-  pointer-events: none;
 }
 
 .tourist-map__panel {
@@ -589,238 +576,62 @@ onMounted(fetchScenicOptions)
   left: 18px;
   bottom: 18px;
   z-index: 5;
-  width: min(390px, calc(100% - 120px));
+  width: min(410px, calc(100% - 120px));
   max-height: calc(100% - 112px);
   overflow: auto;
-  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 8px;
-  padding: 18px;
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 20px 46px rgba(15, 23, 42, 0.16);
   backdrop-filter: blur(16px);
 }
 
-.tourist-map__panel-toggle {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 8px;
-  background: #f1f5f9;
-  color: #334155;
-  cursor: pointer;
-}
-
-.tourist-map__panel-head {
-  padding-right: 36px;
-}
-
-.tourist-map__panel-head p,
-.tourist-map__section-title small {
-  margin: 0;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.tourist-map__panel-head h1 {
-  margin: 4px 0 8px;
-  color: #0f172a;
-  font-size: 24px;
-  line-height: 1.2;
-}
-
-.tourist-map__panel-head span,
-.tourist-map__quick-info span,
-.tourist-map__hours {
+.tourist-map__stat {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tourist-map__panel-head span {
-  color: #475569;
-  font-size: 13px;
-}
-
-.tourist-map__quick-info {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.tourist-map__quick-info span {
   min-width: 0;
+  align-items: center;
   justify-content: center;
-  padding: 8px 6px;
+  gap: 6px;
   border-radius: 8px;
   background: #f8fafc;
+  padding: 8px 6px;
   color: #334155;
   font-size: 12px;
   white-space: nowrap;
 }
 
-.tourist-map__actions {
-  display: flex;
-  margin-top: 14px;
-}
-
-.tourist-map__actions :deep(.el-button) {
-  width: 100%;
-  justify-content: center;
-}
-
-.tourist-map__description {
-  margin: 14px 0 0;
-  color: #334155;
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.tourist-map__section {
-  margin-top: 18px;
-}
-
-.tourist-map__section-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.tourist-map__section-title span {
-  color: #0f172a;
-  font-weight: 800;
-}
-
-.tourist-map__route-list,
-.tourist-map__spot-list,
-.tourist-map__feature-tags,
-.tourist-map__legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .tourist-map__route {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-width: 150px;
-  max-width: 100%;
+  width: 100%;
+  min-height: 40px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 9px 10px;
+  padding: 8px 10px;
   background: #ffffff;
   color: #334155;
   cursor: pointer;
 }
 
-.tourist-map__route span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.tourist-map__route:hover {
+  background: #f8fafc;
 }
 
-.tourist-map__route strong {
-  color: #64748b;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.tourist-map__route.is-active {
+.tourist-map__route--active {
   border-color: rgba(15, 118, 110, 0.42);
-  background: rgba(15, 118, 110, 0.1);
+  background: rgba(15, 118, 110, 0.08);
   color: #0f766e;
 }
 
-.tourist-map__route.is-agent-route {
-  border-color: rgba(124, 58, 237, 0.35);
-  background: rgba(124, 58, 237, 0.08);
+.tourist-map__route--agent {
+  border-color: rgba(124, 58, 237, 0.32);
+  background: rgba(124, 58, 237, 0.06);
 }
 
-.tourist-map__route.is-agent-route.is-active {
-  color: #6d28d9;
-}
-
-.tourist-map__route.is-disabled {
+.tourist-map__route--disabled {
   color: #94a3b8;
   cursor: not-allowed;
-}
-
-.tourist-map__legend span,
-.tourist-map__spot-list span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  border-radius: 8px;
-  padding: 6px 9px;
-  background: #f8fafc;
-  color: #334155;
-  font-size: 12px;
-}
-
-.tourist-map__dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-}
-
-.tourist-map__line {
-  width: 34px;
-  height: 3px;
-  border-radius: 999px;
-}
-
-.tourist-map__dot--spot {
-  background: #0f766e;
-}
-
-.tourist-map__dot--route {
-  background: #f97316;
-}
-
-.tourist-map__dot--area {
-  background: #2563eb;
-}
-
-.tourist-map__line--walk {
-  background: #cbd5e1;
-}
-
-.tourist-map__line--drive {
-  background: #fdba74;
-}
-
-.tourist-map__line--tour {
-  background: #86efac;
-}
-
-.tourist-map__line--service {
-  background: #93c5fd;
-}
-
-.tourist-map__hours {
-  margin-top: 18px;
-  width: 100%;
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: #fff7ed;
-  color: #9a3412;
-  font-size: 13px;
-}
-
-.tourist-map__muted {
-  margin: 0;
-  color: #94a3b8;
-  font-size: 13px;
 }
 
 .tourist-map-panel-enter-active,
@@ -841,44 +652,28 @@ onMounted(fetchScenicOptions)
     border-radius: 20px;
   }
 
-  .tourist-map__topbar {
-    top: 12px;
-    left: 12px;
-    right: 12px;
-  }
-
-  .tourist-map__switcher {
-    width: 100%;
-    gap: 8px;
-    padding: 9px 10px;
-  }
-
-  .tourist-map__brand-icon {
-    width: 34px;
-    height: 34px;
-    flex-basis: 34px;
-  }
-
-  .tourist-map__switcher-main > span {
-    font-size: 11px;
-  }
-
-  .tourist-map__select :deep(.el-select__selected-item) {
+  .tourist-map__select :deep(.n-base-selection) {
     font-size: 16px;
   }
 
+  .tourist-map__titlebar-control {
+    gap: 6px;
+    width: 100%;
+  }
+
+  .tourist-map__titlebar-select {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
   .tourist-map__top-info {
-    gap: 7px;
-    padding-left: 9px;
+    min-width: auto;
+    padding-left: 8px;
   }
 
   .tourist-map__top-info span {
-    font-size: 11px;
-  }
-
-  .tourist-map__floating {
-    right: 12px;
-    bottom: 12px;
+    display: none;
   }
 
   .tourist-map__panel {
@@ -888,19 +683,6 @@ onMounted(fetchScenicOptions)
     bottom: auto;
     width: auto;
     max-height: min(42vh, 340px);
-    padding: 16px;
-  }
-
-  .tourist-map__panel-head h1 {
-    font-size: 20px;
-  }
-
-  .tourist-map__quick-info {
-    grid-template-columns: 1fr;
-  }
-
-  .tourist-map__quick-info span {
-    justify-content: flex-start;
   }
 }
 </style>
