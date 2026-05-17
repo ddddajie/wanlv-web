@@ -55,7 +55,7 @@ function getAvailableMenuKeys() {
 const getDefaultMenuKey = () => {
   const routeView = typeof route.query.view === 'string' ? route.query.view : ''
   if (routeView && getAvailableMenuKeys().includes(routeView)) return routeView
-  return userStore.isAdmin ? 'reservation-dashboard-screen' : 'user-reservation-dashboard-screen'
+  return userStore.isAdmin ? 'reservation-dashboard-screen' : 'user-index'
 }
 
 const activeMenu = ref(getDefaultMenuKey())
@@ -70,7 +70,8 @@ const isDashboardScreenMenu = computed(() =>
   ['reservation-dashboard-screen', 'user-reservation-dashboard-screen'].includes(activeMenu.value),
 )
 const isDashboardScreenActive = computed(() =>
-  userStore.isLoggedIn && isDashboardScreenMenu.value,
+  // 管理员总览大屏保留沉浸式展示，用户端数据大屏始终放在工作台插槽区域。
+  userStore.isAdmin && activeMenu.value === 'reservation-dashboard-screen',
 )
 
 const roleLabel = computed(() => {
@@ -91,7 +92,7 @@ const sidebarDisplayName = computed(() => {
 })
 // 首页默认进入数据页面，管理员和普通用户使用各自的数据大屏。
 const defaultMenuKey = computed(() =>
-  userStore.isAdmin ? 'reservation-dashboard-screen' : 'user-reservation-dashboard-screen',
+  userStore.isAdmin ? 'reservation-dashboard-screen' : 'user-index',
 )
 
 const menuItems = computed(() => {
@@ -357,6 +358,12 @@ onBeforeUnmount(() => {
             <div
               v-if="activeMenu === 'tourist-map'"
               id="dashboard-tourist-map-toolbar"
+              class="dashboard-content__header-tools"
+            ></div>
+
+            <div
+              v-if="activeMenu === 'user-reservation-dashboard-screen'"
+              id="dashboard-user-reservation-toolbar"
               class="dashboard-content__header-tools"
             ></div>
           </div>

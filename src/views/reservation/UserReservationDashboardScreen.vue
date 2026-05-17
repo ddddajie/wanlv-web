@@ -1,194 +1,108 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import * as echarts from 'echarts/core'
-import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import {
-  ArrowLeft,
-  Calendar,
-  Clock,
-  Location,
-  MapLocation,
-  MostlyCloudy,
-  Refresh,
-  Sunny,
-  TrendCharts,
-  Warning,
-} from '@element-plus/icons-vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useMessage } from 'naive-ui'
 import { pageScenicAreasApi } from '@/api/map'
 import { listReservationEnabledSpotsApi, listReservationSlotsApi } from '@/api/reservation'
 
-echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
+const message = useMessage()
 
-const emit = defineEmits(['navigate'])
-
-const trendChartRef = ref(null)
 const scenicOptions = ref([])
 const spotRows = ref([])
-const selectedScenicAreaId = ref('')
+const selectedScenicAreaId = ref(null)
 const selectedDate = ref(formatDate())
+const activeFilter = ref('all')
 const currentTime = ref(new Date())
+const headerToolbarReady = ref(false)
+const showDateModal = ref(false)
 const loading = reactive({
   scenic: false,
   dashboard: false,
 })
 
 let clockTimer = null
-let trendChart = null
+
+const scenicSelectOptions = computed(() =>
+  scenicOptions.value.map((item) => ({
+    label: item.scenicName,
+    value: item.id,
+  })),
+)
 
 const futureDates = computed(() => {
-  return Array.from({ length: 7 }, (_, index) => {
+  return Array.from({ length: 6 }, (_, index) => {
     const date = new Date()
     date.setDate(date.getDate() + index)
     return {
       value: formatDate(date),
-      day: index === 0 ? '今天' : index === 1 ? '明天' : `${date.getMonth() + 1}/${date.getDate()}`,
+      title: index === 0 ? '今天' : index === 1 ? '明天' : `${date.getMonth() + 1}/${date.getDate()}`,
       week: weekText(date),
+      date: formatDisplayDate(date),
     }
   })
 })
 
+const selectedDateInfo = computed(() => futureDates.value.find((item) => item.value === selectedDate.value) || futureDates.value[0])
 const selectedScenicName = computed(() => {
   return scenicOptions.value.find((item) => Number(item.id) === Number(selectedScenicAreaId.value))?.scenicName || '全部景区'
 })
 
 const allSlots = computed(() => spotRows.value.flatMap((spot) => spot.slots))
-const reservableSlots = computed(() => allSlots.value.filter((slot) => slot.available && toNumber(slot.remainingCount) > 0))
-const totalCapacity = computed(() => sum(allSlots.value, 'totalCapacity'))
 const totalRemaining = computed(() => sum(allSlots.value, 'remainingCount'))
-const totalReserved = computed(() => Math.max(totalCapacity.value - totalRemaining.value, 0))
-const usageRate = computed(() => (totalCapacity.value ? Math.round((totalReserved.value / totalCapacity.value) * 100) : 0))
-const calmSpotCount = computed(() => spotCards.value.filter((item) => item.level === 'relaxed').length)
-
-const timeText = computed(() => {
-  return [currentTime.value.getHours(), currentTime.value.getMinutes(), currentTime.value.getSeconds()]
-    .map((item) => String(item).padStart(2, '0'))
-    .join(':')
-})
-
-const statusOverview = computed(() => {
-  if (!allSlots.value.length) {
-    return {
-      label: '暂无放票',
-      desc: '当前日期还没有开放预约时段',
-      icon: Warning,
-      tone: 'muted',
-    }
-  }
-
-  if (!reservableSlots.value.length) {
-    return {
-      label: '名额已满',
-      desc: '建议切换日期或关注后续放票',
-      icon: Warning,
-      tone: 'danger',
-    }
-  }
-
-  if (usageRate.value >= 80) {
-    return {
-      label: '余量偏紧',
-      desc: '热门时段较集中，建议尽快预约',
-      icon: MostlyCloudy,
-      tone: 'warning',
-    }
-  }
-
-  return {
-    label: '预约充足',
-    desc: '当前仍有多个时段可预约',
-    icon: Sunny,
-    tone: 'success',
-  }
-})
-
-const metricCards = computed(() => [
-  {
-    title: '可预约时段',
-    value: reservableSlots.value.length,
-    unit: '个',
-    desc: allSlots.value.length ? `共开放 ${allSlots.value.length} 个时段` : '暂无时段',
-    icon: Clock,
-  },
-  {
-    title: '剩余名额',
-    value: totalRemaining.value,
-    unit: '人',
-    desc: totalCapacity.value ? `总容量 ${totalCapacity.value} 人` : '暂无容量',
-    icon: Calendar,
-  },
-  {
-    title: '整体热度',
-    value: usageRate.value,
-    unit: '%',
-    desc: statusOverview.value.desc,
-    icon: TrendCharts,
-  },
-  {
-    title: '舒适景点',
-    value: calmSpotCount.value,
-    unit: '处',
-    desc: '低热度景点更适合错峰游览',
-    icon: MapLocation,
-  },
-])
 
 const spotCards = computed(() =>
   spotRows.value.map((spot) => {
     const capacity = sum(spot.slots, 'totalCapacity')
     const remaining = sum(spot.slots, 'remainingCount')
     const reserved = Math.max(capacity - remaining, 0)
-    const rate = capacity ? Math.round((reserved / capacity) * 100) : 0
+    const heat = capacity ? Math.round((reserved / capacity) * 100) : 0
     const availableSlots = spot.slots.filter((slot) => slot.available && toNumber(slot.remainingCount) > 0)
     const bestSlot = [...availableSlots].sort((a, b) => toNumber(b.remainingCount) - toNumber(a.remainingCount))[0]
+    const displaySlot = bestSlot || getFirstTimeSlot(spot.slots)
+    const status = getSpotStatus(heat, availableSlots.length, capacity)
 
     return {
       ...spot,
       capacity,
       remaining,
-      rate,
-      availableCount: availableSlots.length,
-      bestTime: bestSlot ? formatTimeRange(bestSlot) : '暂无可约',
-      level: getSpotLevel(rate, availableSlots.length),
+      heat,
+      status,
+      statusText: statusText(status),
+      area: spot.scenicAreaName || selectedScenicName.value,
+      bestTime: displaySlot ? formatTimeRange(displaySlot) : '暂无开放时段',
+      advice: statusAdvice(status),
+      desc: spot.remark || '查看当前预约余量、开放时段与游览建议。',
     }
   }),
 )
 
-const recommendedSpots = computed(() =>
-  [...spotCards.value]
-    .filter((item) => item.availableCount > 0)
-    .sort((a, b) => b.remaining - a.remaining)
-    .slice(0, 3),
-)
-
-const peakSlots = computed(() => {
-  const grouped = new Map()
-  allSlots.value.forEach((slot) => {
-    const key = formatTimeRange(slot)
-    if (!grouped.has(key)) grouped.set(key, { time: key, capacity: 0, remaining: 0 })
-    const row = grouped.get(key)
-    row.capacity += toNumber(slot.totalCapacity)
-    row.remaining += toNumber(slot.remainingCount)
-  })
-
-  return [...grouped.values()]
-    .map((item) => ({
-      ...item,
-      reserved: Math.max(item.capacity - item.remaining, 0),
-      rate: item.capacity ? Math.round(((item.capacity - item.remaining) / item.capacity) * 100) : 0,
-    }))
-    .sort((a, b) => b.rate - a.rate)
-    .slice(0, 4)
+const filteredSpotCards = computed(() => {
+  if (activeFilter.value === 'all') return spotCards.value
+  return spotCards.value.filter((item) => item.status === activeFilter.value)
 })
 
-const trendData = computed(() =>
-  spotRows.value.map((spot) => ({
-    name: spot.spotName,
-    value: spotCards.value.find((item) => item.spotId === spot.spotId)?.rate || 0,
-  })),
-)
+const stats = computed(() => {
+  return {
+    total: spotCards.value.length,
+    available: spotCards.value.filter((item) => item.status === 'available').length,
+    warning: spotCards.value.filter((item) => item.status === 'warning').length,
+    full: spotCards.value.filter((item) => item.status === 'full').length,
+    closed: spotCards.value.filter((item) => item.status === 'closed').length,
+    totalRemain: totalRemaining.value,
+  }
+})
+
+const filterOptions = [
+  { key: 'all', label: '全部景点' },
+  { key: 'available', label: '可预约' },
+  { key: 'full', label: '不可预约' },
+  { key: 'closed', label: '未开放' },
+]
+
+const timeText = computed(() => {
+  return [currentTime.value.getHours(), currentTime.value.getMinutes(), currentTime.value.getSeconds()]
+    .map((item) => String(item).padStart(2, '0'))
+    .join(':')
+})
 
 function cleanParams(params) {
   return Object.fromEntries(
@@ -219,7 +133,6 @@ async function fetchScenicOptions() {
 async function fetchDashboard() {
   if (!selectedScenicAreaId.value) {
     spotRows.value = []
-    renderTrendChart()
     return
   }
 
@@ -248,84 +161,22 @@ async function fetchDashboard() {
       }),
     )
     spotRows.value = nextRows
-    await nextTick()
-    renderTrendChart()
-    resizeCharts()
   } catch {
     spotRows.value = []
-    ElMessage.warning('预约状态暂时无法获取，请稍后再试')
+    message.warning('预约状态暂时无法获取，请稍后再试')
   } finally {
     loading.dashboard = false
   }
 }
 
-function initChart() {
-  if (!trendChartRef.value) return
-  trendChart = echarts.init(trendChartRef.value)
-  renderTrendChart()
-}
-
-function renderTrendChart() {
-  if (!trendChart) return
-
-  trendChart.setOption({
-    color: ['#13a89e'],
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(15, 23, 42, 0.86)',
-      borderWidth: 0,
-      textStyle: { color: '#fff' },
-      formatter(params) {
-        const row = params?.[0]
-        return `${row?.name || '-'}<br/>热度：${row?.value || 0}%`
-      },
-    },
-    grid: { top: 20, right: 14, bottom: 30, left: 34 },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: trendData.value.map((item) => item.name),
-      axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#d8e6ee' } },
-      axisLabel: { color: '#64748b', fontWeight: 700, interval: 0 },
-    },
-    yAxis: {
-      type: 'value',
-      min: 0,
-      max: 100,
-      axisLabel: { color: '#64748b', formatter: '{value}%' },
-      splitLine: { lineStyle: { color: '#e7eff5', type: 'dashed' } },
-    },
-    series: [
-      {
-        name: '景点热度',
-        type: 'line',
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 8,
-        lineStyle: { width: 4 },
-        areaStyle: { color: 'rgba(19, 168, 158, 0.12)' },
-        data: trendData.value.map((item) => item.value),
-      },
-    ],
-  })
-}
-
-function resizeCharts() {
-  trendChart?.resize()
-}
-
 function chooseDate(date) {
   selectedDate.value = date
+  showDateModal.value = false
 }
 
 function refreshDashboard() {
   currentTime.value = new Date()
   fetchDashboard()
-}
-
-function backToConsole() {
-  emit('navigate', 'tourist-map')
 }
 
 function formatDate(date = new Date()) {
@@ -335,12 +186,22 @@ function formatDate(date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
+function formatDisplayDate(date) {
+  return `${date.getMonth() + 1}月${date.getDate()}号`
+}
+
 function weekText(date) {
   return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
 }
 
+function getFirstTimeSlot(slots = []) {
+  return [...slots]
+    .filter((slot) => slot?.startTime && slot?.endTime)
+    .sort((a, b) => String(a.startTime).localeCompare(String(b.startTime)))[0]
+}
+
 function formatTimeRange(row) {
-  return `${String(row?.startTime || '').slice(0, 5)}-${String(row?.endTime || '').slice(0, 5)}`
+  return `${String(row?.startTime || '').slice(0, 5)} - ${String(row?.endTime || '').slice(0, 5)}`
 }
 
 function toNumber(value) {
@@ -352,42 +213,81 @@ function sum(rows, field) {
   return rows.reduce((total, item) => total + toNumber(item?.[field]), 0)
 }
 
-function getSpotLevel(rate, availableCount) {
+function getSpotStatus(heat, availableCount, capacity) {
+  if (!capacity) return 'closed'
   if (!availableCount) return 'full'
-  if (rate >= 80) return 'busy'
-  if (rate >= 55) return 'normal'
-  return 'relaxed'
+  if (heat >= 80) return 'warning'
+  return 'available'
 }
 
-function levelText(level) {
-  if (level === 'full') return '不可预约'
-  if (level === 'busy') return '偏热'
-  if (level === 'normal') return '适中'
-  return '舒适'
+function statusText(status) {
+  if (status === 'available') return '可预约'
+  if (status === 'warning') return '即将约满'
+  if (status === 'full') return '不可预约'
+  return '未开放'
 }
 
-function levelDesc(level) {
-  if (level === 'full') return '建议更换日期'
-  if (level === 'busy') return '建议尽快预约'
-  if (level === 'normal') return '名额仍可选择'
-  return '适合错峰游览'
+function statusAdvice(status) {
+  if (status === 'available') return '当前余量充足，适合预约。'
+  if (status === 'warning') return '剩余名额较少，建议尽快预约。'
+  if (status === 'full') return '不可预约，建议切换日期或选择其他景点。'
+  return '暂未开放预约，请关注后续放票。'
+}
+
+function statusStyle(status) {
+  const map = {
+    available: {
+      tagType: 'success',
+      text: 'text-emerald-700',
+      bg: 'bg-emerald-50',
+      border: 'border-emerald-100',
+      dot: 'bg-emerald-500',
+      progress: 'success',
+    },
+    warning: {
+      tagType: 'warning',
+      text: 'text-orange-700',
+      bg: 'bg-orange-50',
+      border: 'border-orange-100',
+      dot: 'bg-orange-500',
+      progress: 'warning',
+    },
+    full: {
+      tagType: 'error',
+      text: 'text-red-700',
+      bg: 'bg-red-50',
+      border: 'border-red-100',
+      dot: 'bg-red-500',
+      progress: 'error',
+    },
+    closed: {
+      tagType: 'default',
+      text: 'text-slate-500',
+      bg: 'bg-slate-50',
+      border: 'border-slate-200',
+      dot: 'bg-slate-400',
+      progress: 'default',
+    },
+  }
+  return map[status] || map.closed
+}
+
+function remainText(item) {
+  if (item.status === 'closed') return '暂无名额'
+  return `${item.remaining} / ${item.capacity} 人`
 }
 
 onMounted(async () => {
+  headerToolbarReady.value = Boolean(document.querySelector('#dashboard-user-reservation-toolbar'))
   clockTimer = window.setInterval(() => {
     currentTime.value = new Date()
   }, 1000)
-  await nextTick()
-  initChart()
   await fetchScenicOptions()
   await fetchDashboard()
-  window.addEventListener('resize', resizeCharts)
 })
 
 onBeforeUnmount(() => {
   window.clearInterval(clockTimer)
-  window.removeEventListener('resize', resizeCharts)
-  trendChart?.dispose()
 })
 
 watch([selectedScenicAreaId, selectedDate], () => {
@@ -396,641 +296,654 @@ watch([selectedScenicAreaId, selectedDate], () => {
 </script>
 
 <template>
-  <section class="user-reservation-screen" v-loading="loading.scenic || loading.dashboard">
-    <header class="screen-hero">
-      <div class="hero-topline">
-        <button type="button" class="icon-button system-entry-button" aria-label="进入系统" @click="backToConsole">
-          <el-icon>
-            <ArrowLeft />
-          </el-icon>
-          <span>进入系统</span>
-        </button>
-        <div>
-          <p>预约状态</p>
-          <h1>{{ selectedScenicName }}</h1>
-        </div>
-        <button type="button" class="icon-button icon-button--primary" aria-label="刷新" @click="refreshDashboard">
-          <el-icon>
-            <Refresh />
-          </el-icon>
-        </button>
-      </div>
+  <Teleport v-if="headerToolbarReady" to="#dashboard-user-reservation-toolbar">
+    <div class="dashboard-toolbar-control">
+      <n-select v-model:value="selectedScenicAreaId" :options="scenicSelectOptions" :loading="loading.scenic"
+        class="dashboard-scenic-select" placeholder="选择景区" />
+    </div>
+  </Teleport>
 
-      <div class="hero-status" :class="`hero-status--${statusOverview.tone}`">
-        <div class="hero-status__icon">
-          <el-icon>
-            <component :is="statusOverview.icon" />
-          </el-icon>
-        </div>
-        <div>
-          <span>当前状态</span>
-          <strong>{{ statusOverview.label }}</strong>
-          <p>{{ statusOverview.desc }}</p>
-        </div>
-      </div>
+  <n-spin class="dashboard-screen-spin" :show="loading.scenic || loading.dashboard">
+    <section class="appointment-status-screen">
+      <main class="appointment-status-screen__inner">
+        <section class="dashboard-summary-card shadow-card">
+          <div class="dashboard-summary-grid">
+            <div class="p-4 sm:p-5 lg:p-6">
+              <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div
+                    class="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-teal-700 shadow-sm">
+                    <span class="status-dot bg-teal-600"></span>
+                    今日预约概况
+                  </div>
+                  <h2 class="dashboard-summary-title">
+                    <span>{{ selectedScenicName }} · {{ selectedDateInfo?.date }}</span>
+                    <n-button size="small" round type="primary" secondary @click="showDateModal = true">
+                      切换日期
+                    </n-button>
+                  </h2>
+                  <p class="mt-2 max-w-2xl text-xs leading-5 text-slate-600">
+                    当前共 {{ stats.total }} 个景点，{{ stats.available }} 个可预约，{{ stats.warning }} 个即将约满，
+                    {{ stats.full + stats.closed }} 个暂不可约。建议优先选择余量充足的景点，避开高峰时段。
+                  </p>
+                </div>
 
-      <div class="hero-controls">
-        <el-select v-model="selectedScenicAreaId" class="hero-select" filterable placeholder="选择景区">
-          <template #prefix>
-            <el-icon>
-              <Location />
-            </el-icon>
-          </template>
-          <el-option v-for="item in scenicOptions" :key="item.id" :label="item.scenicName" :value="item.id" />
-        </el-select>
-        <div class="time-pill">
-          <el-icon>
-            <Clock />
-          </el-icon>
-          <span>{{ timeText }}</span>
-        </div>
-      </div>
-    </header>
-
-    <section class="date-strip" aria-label="预约日期">
-      <button v-for="item in futureDates" :key="item.value" type="button" class="date-chip"
-        :class="{ 'is-active': selectedDate === item.value }" @click="chooseDate(item.value)">
-        <strong>{{ item.day }}</strong>
-        <span>{{ item.week }}</span>
-      </button>
-    </section>
-
-    <section class="metric-grid" aria-label="预约概览">
-      <article v-for="item in metricCards" :key="item.title" class="metric-card">
-        <div class="metric-card__icon">
-          <el-icon>
-            <component :is="item.icon" />
-          </el-icon>
-        </div>
-        <div>
-          <span>{{ item.title }}</span>
-          <strong>{{ item.value }}<em>{{ item.unit }}</em></strong>
-          <p>{{ item.desc }}</p>
-        </div>
-      </article>
-    </section>
-
-    <section class="panel recommend-panel">
-      <div class="panel-title">
-        <el-icon>
-          <Sunny />
-        </el-icon>
-        <h2>推荐预约</h2>
-      </div>
-      <div class="recommend-list">
-        <article v-for="item in recommendedSpots" :key="item.spotId" class="recommend-card">
-          <div>
-            <strong>{{ item.spotName }}</strong>
-            <span>{{ item.bestTime }}</span>
-          </div>
-          <p>剩余 {{ item.remaining }} 人，{{ levelDesc(item.level) }}</p>
-        </article>
-        <el-empty v-if="!recommendedSpots.length" description="当前日期暂无可推荐时段" :image-size="76" />
-      </div>
-    </section>
-
-    <section class="panel spot-panel">
-      <div class="panel-title">
-        <el-icon>
-          <MapLocation />
-        </el-icon>
-        <h2>景点预约状态</h2>
-      </div>
-      <div class="spot-list">
-        <article v-for="item in spotCards" :key="item.spotId" class="spot-card" :class="`spot-card--${item.level}`">
-          <div class="spot-card__top">
-            <div>
-              <h3>{{ item.spotName }}</h3>
-              <p>{{ item.bestTime }} · {{ levelDesc(item.level) }}</p>
+                <div class="dashboard-summary-remain rounded-2xl bg-white/86 p-3 shadow-sm backdrop-blur">
+                  <div class="text-xs text-slate-500">当前可预约余量</div>
+                  <div class="mt-1 flex items-end gap-1">
+                    <span class="text-3xl font-black text-teal-700">{{ stats.totalRemain }}</span>
+                    <span class="mb-1 text-xs text-slate-500">人</span>
+                  </div>
+                  <div class="mt-2 text-xs font-semibold text-slate-500">{{ timeText }}</div>
+                </div>
+              </div>
             </div>
-            <span>{{ levelText(item.level) }}</span>
-          </div>
-          <div class="spot-card__bar">
-            <i :style="{ width: `${item.rate}%` }" />
-          </div>
-          <div class="spot-card__meta">
-            <span>热度 {{ item.rate }}%</span>
-            <span>剩余 {{ item.remaining }} / {{ item.capacity }}</span>
-          </div>
-        </article>
-        <el-empty v-if="!spotCards.length" description="当前景区暂无可预约景点" :image-size="88" />
-      </div>
-    </section>
 
-    <section class="panel">
-      <div class="panel-title">
-        <el-icon>
-          <Clock />
-        </el-icon>
-        <h2>热门时段</h2>
-      </div>
-      <div class="slot-list">
-        <article v-for="item in peakSlots" :key="item.time" class="slot-row">
-          <strong>{{ item.time }}</strong>
-          <div class="slot-row__bar"><i :style="{ width: `${item.rate}%` }" /></div>
-          <span>{{ item.rate }}%</span>
-        </article>
-        <el-empty v-if="!peakSlots.length" description="暂无时段热度数据" :image-size="76" />
-      </div>
+            <div class="dashboard-stat-grid">
+              <div class="dashboard-stat-card rounded-2xl bg-emerald-50 p-3">
+                <div class="text-xs font-medium text-emerald-700">可预约</div>
+                <div class="mt-1 text-xl font-black text-emerald-700">{{ stats.available }}</div>
+              </div>
+              <div class="dashboard-stat-card rounded-2xl bg-orange-50 p-3">
+                <div class="text-xs font-medium text-orange-700">即将约满</div>
+                <div class="mt-1 text-xl font-black text-orange-700">{{ stats.warning }}</div>
+              </div>
+              <div class="dashboard-stat-card rounded-2xl bg-red-50 p-3">
+                <div class="text-xs font-medium text-red-700">名额已满</div>
+                <div class="mt-1 text-xl font-black text-red-700">{{ stats.full }}</div>
+              </div>
+              <div class="dashboard-stat-card rounded-2xl bg-slate-100 p-3">
+                <div class="text-xs font-medium text-slate-600">未开放</div>
+                <div class="mt-1 text-xl font-black text-slate-700">{{ stats.closed }}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="dashboard-spot-section">
+          <div class="dashboard-spot-section__header">
+            <div>
+              <h3 class="text-sm font-bold text-slate-900 sm:text-base">景点预约状态</h3>
+              <p class="mt-1 text-xs text-slate-500">重点查看是否可预约、剩余名额、当前热度与操作建议</p>
+            </div>
+
+            <div class="dashboard-filter-scroll hide-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+              <button v-for="filter in filterOptions" :key="filter.key" type="button"
+                class="shrink-0 rounded-full border px-3 py-1.5 text-xs transition" :class="activeFilter === filter.key
+                  ? 'border-teal-600 bg-teal-600 text-white shadow-md shadow-teal-200/70'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-teal-400 hover:text-teal-700'
+                  " @click="activeFilter = filter.key">
+                {{ filter.label }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="filteredSpotCards.length" class="dashboard-spot-grid">
+            <article v-for="item in filteredSpotCards" :key="item.spotId"
+              class="dashboard-spot-card group rounded-[20px] border bg-white p-4 shadow-card transition hover:-translate-y-0.5 hover:shadow-xl"
+              :class="statusStyle(item.status).border">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="status-dot" :class="statusStyle(item.status).dot"></span>
+                    <span class="text-xs font-medium text-slate-500">{{ item.area }}</span>
+                  </div>
+                  <h4 class="mt-1.5 truncate text-lg font-black text-slate-950">{{ item.spotName }}</h4>
+                  <p class="dashboard-spot-desc mt-1 text-xs leading-5 text-slate-500">{{ item.desc }}</p>
+                </div>
+
+                <n-tag :type="statusStyle(item.status).tagType" round :bordered="false">
+                  {{ item.statusText }}
+                </n-tag>
+              </div>
+
+              <div class="dashboard-spot-metrics mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div class="dashboard-spot-metric rounded-2xl p-3" :class="statusStyle(item.status).bg">
+                  <div class="text-xs text-slate-500">剩余名额</div>
+                  <div class="mt-1 text-xl font-black" :class="statusStyle(item.status).text">
+                    {{ remainText(item) }}
+                  </div>
+                </div>
+                <div class="dashboard-spot-metric rounded-2xl bg-slate-50 p-3">
+                  <div class="text-xs text-slate-500">开放时段</div>
+                  <div class="mt-2 text-xs font-bold text-slate-800">{{ item.bestTime }}</div>
+                </div>
+              </div>
+
+              <div class="dashboard-spot-heat mt-4">
+                <div class="mb-2 flex items-center justify-between text-xs">
+                  <span class="font-semibold text-slate-700">预约热度</span>
+                  <span class="font-black" :class="statusStyle(item.status).text">{{ item.heat }}%</span>
+                </div>
+                <n-progress type="line" :percentage="item.heat" :status="statusStyle(item.status).progress" :height="7"
+                  :border-radius="999" :show-indicator="false" />
+              </div>
+
+              <div class="dashboard-spot-advice mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                <div class="flex gap-2">
+                  <div
+                    class="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white text-teal-700 shadow-sm">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M12 3.75 13.78 9l5.47.03-4.4 3.26 1.66 5.22L12 14.37l-4.51 3.14 1.66-5.22-4.4-3.26L10.22 9 12 3.75Z"
+                        fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div class="text-xs font-bold text-slate-700">游览建议</div>
+                    <p class="dashboard-spot-advice-text mt-1 text-xs leading-5 text-slate-600">{{ item.advice }}</p>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div v-else class="dashboard-spot-empty shadow-card">
+            <n-empty description="当前筛选条件下暂无景点" />
+          </div>
+        </section>
+      </main>
     </section>
-  </section>
+  </n-spin>
+
+  <n-modal v-model:show="showDateModal" preset="card" class="dashboard-date-modal" title="选择日期"
+    :style="{ width: 'min(480px, calc(100vw - 32px))' }">
+    <div class="dashboard-date-dialog-grid">
+      <button v-for="date in futureDates" :key="date.value" type="button" class="dashboard-date-option" :class="{
+        'dashboard-date-option--active': selectedDate === date.value,
+      }" @click="chooseDate(date.value)">
+        <strong>{{ date.date }}</strong>
+        <span>{{ date.title }} · {{ date.week }}</span>
+      </button>
+    </div>
+  </n-modal>
 </template>
 
 <style scoped>
-.user-reservation-screen {
-  min-height: 100vh;
-  padding: 14px;
-  color: #10203c;
+.appointment-status-screen {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: #1f2937;
   background:
-    radial-gradient(circle at 12% 0%, rgba(19, 168, 158, 0.2), transparent 28%),
-    linear-gradient(180deg, #f4fbfa 0%, #eef6fb 100%);
-  overflow: auto;
+    radial-gradient(circle at 18% 12%, rgba(0, 168, 142, 0.12), transparent 28%),
+    linear-gradient(180deg, #f2fffc 0%, #f8fafc 42%, #ffffff 100%);
 }
 
-.screen-hero {
-  display: grid;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid rgba(199, 222, 231, 0.86);
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 18px 38px rgba(25, 88, 120, 0.11);
+.dashboard-screen-spin {
+  height: 100%;
+  min-height: 0;
 }
 
-.hero-topline,
-.hero-controls,
-.panel-title,
-.metric-card,
-.spot-card__top,
-.spot-card__meta,
-.slot-row {
+.dashboard-toolbar-control {
   display: flex;
-  align-items: center;
-}
-
-.hero-topline {
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.hero-topline p {
-  margin: 0 0 4px;
-  color: #0f766e;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-}
-
-.hero-topline h1 {
-  margin: 0;
-  color: #0f172a;
-  font-size: 24px;
-  line-height: 1.18;
-  font-weight: 900;
-}
-
-.icon-button {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  border: 1px solid #d3e2ea;
-  border-radius: 14px;
-  background: #fff;
-  color: #0f766e;
-  font-size: 18px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-  cursor: pointer;
-}
-
-.system-entry-button {
-  display: inline-flex;
-  gap: 6px;
-  width: auto;
-  min-width: 104px;
-  padding: 0 14px;
-  font-size: 14px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.icon-button--primary {
-  border-color: transparent;
-  background: linear-gradient(135deg, #0f9f96, #14b8a6);
-  color: #fff;
-}
-
-.hero-status {
-  display: grid;
-  grid-template-columns: 62px minmax(0, 1fr);
-  gap: 14px;
-  align-items: center;
-  min-height: 116px;
-  padding: 16px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(19, 168, 158, 0.14), rgba(255, 255, 255, 0.7));
-}
-
-.hero-status__icon {
-  display: grid;
-  place-items: center;
-  width: 62px;
-  height: 62px;
-  border-radius: 18px;
-  background: #0f9f96;
-  color: #fff;
-  font-size: 30px;
-}
-
-.hero-status--warning .hero-status__icon {
-  background: #f59e0b;
-}
-
-.hero-status--danger .hero-status__icon {
-  background: #ef4444;
-}
-
-.hero-status--muted .hero-status__icon {
-  background: #64748b;
-}
-
-.hero-status span,
-.metric-card span,
-.spot-card__meta,
-.recommend-card span {
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.hero-status strong {
-  display: block;
-  margin: 2px 0;
-  color: #0f172a;
-  font-size: 30px;
-  line-height: 1.05;
-  font-weight: 900;
-}
-
-.hero-status p,
-.metric-card p,
-.spot-card p,
-.recommend-card p {
-  margin: 0;
-  color: #475569;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.hero-controls {
-  gap: 10px;
-}
-
-.hero-select {
-  flex: 1;
+  width: clamp(260px, 28vw, 460px);
   min-width: 0;
 }
 
-.hero-controls :deep(.el-select__wrapper),
-.time-pill {
-  min-height: 44px;
-  border-radius: 14px;
-  box-shadow: none;
+.dashboard-scenic-select {
+  width: 100%;
+  min-width: 0;
 }
 
-.time-pill {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  padding: 0 12px;
-  border: 1px solid #dcdfe6;
-  background: #fff;
-  color: #0f766e;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.date-strip {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(72px, 1fr);
-  gap: 8px;
-  margin: 14px 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.date-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.date-chip {
-  display: grid;
-  gap: 3px;
-  min-height: 64px;
-  padding: 10px 8px;
-  border: 1px solid #d3e2ea;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.84);
-  color: #0f172a;
-  cursor: pointer;
-}
-
-.date-chip strong {
-  font-size: 15px;
-}
-
-.date-chip span {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.date-chip.is-active {
-  border-color: transparent;
-  background: linear-gradient(135deg, #0f9f96, #14b8a6);
-  color: #fff;
-}
-
-.date-chip.is-active span {
-  color: rgba(255, 255, 255, 0.78);
-}
-
-.metric-grid,
-.spot-list,
-.recommend-list,
-.slot-list {
-  display: grid;
-  gap: 10px;
-}
-
-.metric-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-bottom: 12px;
-}
-
-.metric-card,
-.panel {
-  border: 1px solid rgba(199, 222, 231, 0.86);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 14px 30px rgba(25, 88, 120, 0.08);
-}
-
-.metric-card {
-  gap: 10px;
-  min-height: 126px;
-  padding: 14px;
-}
-
-.metric-card__icon {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  border-radius: 14px;
-  background: rgba(19, 168, 158, 0.12);
-  color: #0f9f96;
-  font-size: 22px;
-}
-
-.metric-card strong {
-  display: block;
-  margin: 4px 0;
-  color: #0f172a;
-  font-size: 26px;
-  line-height: 1;
-  font-weight: 900;
-}
-
-.metric-card em {
-  margin-left: 2px;
-  font-size: 13px;
-  font-style: normal;
-}
-
-.panel {
-  margin-top: 12px;
+.appointment-status-screen__inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  width: min(100%, 1680px);
+  margin: 0 auto;
   padding: 16px;
 }
 
-.panel-title {
-  gap: 8px;
-  margin-bottom: 12px;
-  color: #0f9f96;
+.dashboard-summary-card {
+  flex: 0 0 auto;
+  margin-top: 0;
+  overflow: hidden;
+  border: 1px solid #ccfbf1;
+  border-radius: 26px;
+  background: #fff;
 }
 
-.panel-title h2 {
-  margin: 0;
-  color: #0f172a;
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.recommend-card {
+.dashboard-summary-grid {
   display: grid;
-  gap: 8px;
-  padding: 14px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(255, 255, 255, 0.78));
+  gap: 0;
 }
 
-.recommend-card div {
+.dashboard-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  border-top: 1px solid #f0fdfa;
+  padding: 16px;
+}
+
+.dashboard-summary-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  margin-top: 12px;
+  color: #020617;
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0;
 }
 
-.recommend-card strong,
-.spot-card h3,
-.slot-row strong {
+.dashboard-date-dialog-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-date-option {
+  min-height: 64px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
   color: #0f172a;
+  text-align: center;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+}
+
+.dashboard-date-option strong,
+.dashboard-date-option span {
+  display: block;
+}
+
+.dashboard-date-option strong {
   font-size: 16px;
   font-weight: 900;
 }
 
-.spot-card {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid #d8e7ee;
-  border-radius: 16px;
-  background: #fff;
-}
-
-.spot-card__top {
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.spot-card h3 {
-  margin: 0 0 4px;
-}
-
-.spot-card__top>span {
-  flex: 0 0 auto;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: #dcfce7;
-  color: #15803d;
+.dashboard-date-option span {
+  margin-top: 4px;
+  color: #64748b;
   font-size: 12px;
-  font-weight: 900;
 }
 
-.spot-card--normal .spot-card__top>span {
-  background: #e0f2fe;
-  color: #0369a1;
+.dashboard-date-option--active {
+  border-color: #0d9488;
+  background: #0d9488;
+  color: #fff;
+  box-shadow: 0 14px 30px rgba(13, 148, 136, 0.22);
 }
 
-.spot-card--busy .spot-card__top>span {
-  background: #fef3c7;
-  color: #b45309;
+.dashboard-date-option--active span {
+  color: rgba(255, 255, 255, 0.82);
 }
 
-.spot-card--full .spot-card__top>span {
-  background: #fee2e2;
-  color: #b91c1c;
+.dashboard-spot-grid {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  align-items: start;
+  min-height: 0;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 2px 4px 16px 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.spot-card__bar,
-.slot-row__bar {
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e6eef4;
+.dashboard-spot-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 18px;
 }
 
-.spot-card__bar i,
-.slot-row__bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #0f9f96, #14b8a6);
+.dashboard-spot-card {
+  min-height: 276px;
+  overflow: visible;
 }
 
-.spot-card--busy .spot-card__bar i,
-.slot-row__bar i {
-  background: linear-gradient(90deg, #f59e0b, #fbbf24);
-}
-
-.spot-card--full .spot-card__bar i {
-  background: linear-gradient(90deg, #ef4444, #fb7185);
-}
-
-.spot-card__meta {
-  justify-content: space-between;
+.dashboard-spot-section__header {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
   gap: 12px;
 }
 
-.slot-row {
-  display: grid;
-  grid-template-columns: minmax(96px, 120px) minmax(0, 1fr) 44px;
-  gap: 10px;
+.dashboard-spot-empty {
+  margin-top: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 24px;
+  background: #fff;
+  padding: 40px;
 }
 
-.slot-row span {
-  color: #0f766e;
-  font-weight: 900;
-  text-align: right;
+.dashboard-spot-grid::-webkit-scrollbar {
+  width: 8px;
 }
 
-.trend-chart {
-  height: 220px;
+.dashboard-spot-grid::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.22);
 }
 
-@media (min-width: 760px) {
-  .user-reservation-screen {
-    padding: 22px;
+.dashboard-spot-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.shadow-card {
+  box-shadow: 0 12px 30px rgba(15, 118, 110, 0.08);
+}
+
+:deep(.n-spin-content) {
+  height: 100%;
+  min-height: 0;
+}
+
+:deep(.n-spin-container) {
+  height: 100%;
+  min-height: 0;
+}
+
+:deep(.n-base-selection) {
+  border-radius: 12px;
+}
+
+:global(.dashboard-date-modal.n-card) {
+  max-width: calc(100vw - 32px);
+}
+
+:global(.dashboard-date-modal.n-card > .n-card-header) {
+  padding: 18px 20px 10px;
+}
+
+:global(.dashboard-date-modal.n-card > .n-card__content) {
+  padding: 14px 20px 20px;
+}
+
+@media (min-width: 640px) {
+  .appointment-status-screen__inner {
+    padding: 20px;
   }
 
-  .screen-hero {
-    grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.2fr);
+  .dashboard-date-dialog-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-spot-section__header {
+    flex-direction: row;
     align-items: center;
+    justify-content: space-between;
+  }
+}
+
+@media (min-width: 1024px) {
+  .appointment-status-screen__inner {
+    padding: 24px 28px;
   }
 
-  .hero-topline,
-  .hero-controls {
-    grid-column: 1;
+  .dashboard-summary-card {
+    margin-top: 0;
   }
 
-  .hero-status {
-    grid-row: 1 / span 2;
-    grid-column: 2;
+  .dashboard-spot-section {
+    min-height: 360px;
   }
 
-  .metric-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .dashboard-summary-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
   }
 
-  .spot-list,
-  .recommend-list {
+  .dashboard-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-top: 0;
+    border-left: 1px solid #f0fdfa;
+    padding: 20px;
   }
 }
 
-@media (min-width: 1180px) {
-  .user-reservation-screen {
-    display: grid;
-    grid-template-columns: minmax(320px, 0.95fr) minmax(520px, 1.45fr);
-    gap: 16px;
-    align-content: start;
-    padding: 26px;
+@media (min-width: 1440px) {
+  .appointment-status-screen__inner {
+    padding: 28px 36px;
   }
 
-  .screen-hero,
-  .date-strip,
-  .metric-grid {
-    grid-column: 1 / -1;
+  .dashboard-summary-grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(420px, 0.65fr);
   }
 
-  .date-strip {
-    grid-template-columns: repeat(7, minmax(72px, 1fr));
-    grid-auto-flow: row;
-    grid-auto-columns: initial;
-    overflow-x: visible;
+  .dashboard-spot-grid {
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   }
 
-  .metric-grid {
-    margin-bottom: 0;
-  }
-
-  .spot-panel {
-    grid-row: span 2;
-  }
-
-  .trend-panel {
-    grid-column: 1 / -1;
+  .dashboard-spot-card {
+    min-height: 292px;
   }
 }
 
-@media (max-width: 420px) {
-  .user-reservation-screen {
-    padding: 10px;
+@media (max-width: 768px) {
+  .dashboard-toolbar-control {
+    width: 100%;
   }
 
-  .screen-hero {
-    padding: 14px;
-    border-radius: 18px;
+  .appointment-status-screen {
+    overflow-x: hidden;
+    overflow-y: auto;
+    background:
+      radial-gradient(circle at 18% 8%, rgba(0, 168, 142, 0.1), transparent 24%),
+      linear-gradient(180deg, #f7fffd 0%, #ffffff 52%, #ffffff 100%);
   }
 
-  .hero-controls {
-    align-items: stretch;
+  .appointment-status-screen__inner {
+    width: 100%;
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    padding: 12px 14px 16px;
+  }
+
+  .dashboard-summary-card {
+    border-radius: 20px;
+    box-shadow: 0 10px 24px rgba(15, 118, 110, 0.07);
+  }
+
+  .dashboard-summary-card :deep(.n-button) {
+    height: 28px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .dashboard-summary-title {
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 18px;
+  }
+
+  .dashboard-summary-remain {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 0;
+    margin-top: 4px;
+    border: 1px solid #eef2f7;
+    border-radius: 14px;
+    padding: 10px 12px;
+  }
+
+  .dashboard-summary-remain .text-3xl {
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .dashboard-summary-remain .mt-2 {
+    margin-top: 0;
+  }
+
+  .dashboard-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px 14px 14px;
+  }
+
+  .dashboard-stat-card {
+    min-width: 0;
+    border-radius: 14px;
+    padding: 9px 8px;
+  }
+
+  .dashboard-stat-card .text-xs {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+
+  .dashboard-stat-card .text-xl {
+    margin-top: 2px;
+    font-size: 17px;
+    line-height: 1.15;
+  }
+
+  .dashboard-spot-section {
+    margin-top: 16px;
+  }
+
+  .dashboard-spot-section__header {
+    gap: 10px;
+  }
+
+  .dashboard-spot-section__header p {
+    display: none;
+  }
+
+  .dashboard-filter-scroll {
+    gap: 7px;
+    width: 100%;
+    max-width: 100%;
+    margin-right: 0;
+    margin-left: 0;
+    padding-right: 0;
+    padding-left: 0;
+    padding-bottom: 2px;
+  }
+
+  .dashboard-spot-grid {
+    display: flex;
     flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-height: none;
+    margin-top: 10px;
+    padding: 1px 0 14px;
+    overflow: visible;
   }
 
-  .time-pill {
+  .dashboard-spot-card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 246px;
+    border-radius: 16px;
+    padding: 12px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+  }
+
+  .dashboard-spot-card :deep(.n-tag) {
+    --n-height: 24px;
+    flex: 0 0 auto;
+    font-size: 11px;
+  }
+
+  .dashboard-spot-card h4 {
+    margin-top: 4px;
+    font-size: 16px;
+    line-height: 1.2;
+  }
+
+  .dashboard-spot-desc {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    line-height: 18px;
+  }
+
+  .dashboard-spot-metrics {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+    grid-auto-rows: 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .dashboard-spot-metric {
+    display: flex;
+    min-width: 0;
+    min-height: 58px;
+    flex-direction: column;
     justify-content: center;
+    border-radius: 13px;
+    padding: 9px 10px;
   }
 
-  .metric-grid {
-    grid-template-columns: 1fr;
+  .dashboard-spot-metric .text-xl {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    line-height: 1.25;
   }
 
-  .slot-row {
-    grid-template-columns: 96px minmax(0, 1fr) 40px;
+  .dashboard-spot-metric .text-xs {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+
+  .dashboard-spot-heat {
+    margin-top: 10px;
+  }
+
+  .dashboard-spot-heat .mb-2 {
+    margin-bottom: 5px;
+  }
+
+  .dashboard-spot-advice {
+    min-height: 52px;
+    margin-top: 10px;
+    border-radius: 13px;
+    padding: 8px 10px;
+  }
+
+  .dashboard-spot-advice .h-5 {
+    display: none;
+  }
+
+  .dashboard-spot-advice-text {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    line-height: 18px;
+  }
+
+  .dashboard-summary-title {
+    font-size: 18px;
   }
 }
 </style>

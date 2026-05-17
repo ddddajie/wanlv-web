@@ -57,6 +57,19 @@ function enterGuestView(view) {
   })
 }
 
+function getLoginRedirect() {
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  if (!redirect) return '/dashboard?view=user-index'
+
+  const redirectUrl = new URL(redirect, window.location.origin)
+  const redirectView = redirectUrl.searchParams.get('view')
+  if (redirectUrl.pathname === '/dashboard' && (!redirectView || redirectView === 'user-reservation-dashboard-screen')) {
+    return '/dashboard?view=user-index'
+  }
+
+  return `${redirectUrl.pathname}${redirectUrl.search}${redirectUrl.hash}`
+}
+
 function startCountdown(seconds) {
   if (countdownTimer) {
     window.clearInterval(countdownTimer)
@@ -112,9 +125,7 @@ async function handlePhoneSubmit() {
     userStore.setLogin(userInfo)
     message.success(`欢迎回来，${userInfo.displayName || userInfo.username}`)
 
-    const redirect =
-      typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
-    router.replace(redirect)
+    router.replace(getLoginRedirect())
   } finally {
     loading.value = false
   }
@@ -129,9 +140,7 @@ async function handlePasswordSubmit() {
     userStore.setLogin(userInfo)
     message.success(`欢迎回来，${userInfo.displayName || userInfo.username}`)
 
-    const redirect =
-      typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
-    router.replace(redirect)
+    router.replace(getLoginRedirect())
   } finally {
     loading.value = false
   }
