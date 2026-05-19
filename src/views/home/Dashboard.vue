@@ -10,6 +10,7 @@ import Chat from '@/views/chat/Chat-2.0.vue'
 import DailyReport from '@/views/report/DailyReport.vue'
 import NormalUserDetail from '@/views/user/NormalUserDetail.vue'
 import NormalUserList from '@/views/user/NormalUserList.vue'
+import UserDigitalProfileList from '@/views/user/UserDigitalProfileList.vue'
 import UserProfileEdit from '@/views/user/UserProfileEdit.vue'
 
 const MapWorkspace = defineAsyncComponent(() => import('@/views/map/MapWorkspace.vue'))
@@ -39,7 +40,7 @@ function getAvailableMenuKeys() {
 
   const keys = ['reservation-dashboard-screen', 'tourist-map']
   if (userStore.isSuperAdmin) {
-    keys.push('daily-report', 'admin-create-page')
+    keys.push('daily-report', 'admin-create-page', 'user-digital-profile-list')
   }
   keys.push(
     'map-workspace',
@@ -139,6 +140,7 @@ const menuItems = computed(() => {
         label: '用户管理',
         children: [
           ...(canUseAnalysis.value ? [{ key: 'admin-create-page', label: '新增管理员' }] : []),
+          ...(canUseAnalysis.value ? [{ key: 'user-digital-profile-list', label: '用户数字画像' }] : []),
           { key: 'user-admin-detail', label: '管理员详情查询' },
           { key: 'user-normal-detail', label: '普通用户详情查询' },
           { key: 'user-admin-list', label: '管理员分页列表' },
@@ -414,6 +416,8 @@ onBeforeUnmount(() => {
           <AdminUserList v-else-if="activeMenu === 'user-admin-list'" />
 
           <NormalUserList v-else-if="activeMenu === 'user-normal-list'" />
+
+          <UserDigitalProfileList v-else-if="activeMenu === 'user-digital-profile-list'" />
 
         </div>
       </div>

@@ -63,3 +63,7 @@ export function pageAdminUsersApi(params) {
 export function pageNormalUsersApi(params) {
   return request.get('/user/normal/page', { params })
 }
+
+export function listUserDigitalProfilesApi(params) {
+  return request.get('/user/admin/digital-profile', { params })
+}
