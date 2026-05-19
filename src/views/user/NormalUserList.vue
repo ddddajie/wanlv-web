@@ -5,7 +5,9 @@ import { deleteNormalUserApi, pageNormalUsersApi, updateNormalUserApi } from '@/
 import {
   formatDateTime,
   formatGender,
+  formatRealNameStatus,
   formatStatus,
+  getRealNameStatusTagType,
   normalizePageResult,
   parseInterestTags,
 } from './userViewUtils'
@@ -131,6 +133,13 @@ onMounted(() => {
           <template #default="{ row }">
             <el-tag size="small" :type="Number(row.status) === 1 ? 'success' : 'danger'" effect="plain">
               {{ formatStatus(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="实名状态" min-width="110">
+          <template #default="{ row }">
+            <el-tag size="small" :type="getRealNameStatusTagType(row.realNameStatus)" effect="plain">
+              {{ formatRealNameStatus(row.realNameStatus) }}
             </el-tag>
           </template>
         </el-table-column>

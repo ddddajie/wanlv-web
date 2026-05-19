@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import { pageScenicAreasApi } from '@/api/map'
 import {
   getAdminUserApi,
@@ -10,6 +9,7 @@ import {
   verifyNormalUserRealNameApi,
 } from '@/api/user'
 import { pinia, useUserStore } from '@/stores'
+import { message as feedbackMessage } from '@/utils/feedback'
 import {
   buildDisplayName,
   normalizePageResult,
@@ -69,27 +69,27 @@ const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   phone: [
     {
-      validator(rule, value, callback) {
-        if (!value || /^1\d{10}$/.test(value)) {
-          callback()
-          return
-        }
-
-        callback(new Error('请输入正确的手机号'))
+      validator(rule, value) {
+        if (!value || /^1\d{10}$/.test(value)) return true
+        return new Error('请输入正确的手机号')
       },
       trigger: 'blur',
     },
   ],
-  email: [{ type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }],
+  email: [
+    {
+      validator(rule, value) {
+        if (!value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return true
+        return new Error('请输入正确的邮箱地址')
+      },
+      trigger: 'blur',
+    },
+  ],
   age: [
     {
-      validator(rule, value, callback) {
-        if (value === null || value === '' || Number(value) >= 0) {
-          callback()
-          return
-        }
-
-        callback(new Error('年龄不能小于 0'))
+      validator(rule, value) {
+        if (value === null || value === '' || Number(value) >= 0) return true
+        return new Error('年龄不能小于 0')
       },
       trigger: 'change',
     },
@@ -101,13 +101,9 @@ const realNameRules = {
   idCardNo: [
     { required: true, message: '请输入身份证号', trigger: 'blur' },
     {
-      validator(rule, value, callback) {
-        if (/^\d{17}[\dXx]$/.test(String(value || '').trim())) {
-          callback()
-          return
-        }
-
-        callback(new Error('请输入正确的身份证号'))
+      validator(rule, value) {
+        if (/^\d{17}[\dXx]$/.test(String(value || '').trim())) return true
+        return new Error('请输入正确的身份证号')
       },
       trigger: 'blur',
     },
@@ -117,9 +113,12 @@ const realNameRules = {
 const realNameStatusMeta = computed(() => {
   const status = Number(userInfo.value.realNameStatus ?? 0)
   if (status === 1) return { label: '已实名', type: 'success' }
-  if (status === 2) return { label: '实名失败', type: 'danger' }
+  if (status === 2) return { label: '实名失败', type: 'error' }
   return { label: '未实名', type: 'warning' }
 })
+
+const profileTagType = computed(() => (isAdminUser.value ? 'warning' : 'success'))
+const profileTagText = computed(() => (isAdminUser.value ? '管理员资料维护' : '普通用户资料维护'))
 
 function syncForm(source) {
   form.id = source?.id ?? ''
@@ -234,7 +233,7 @@ async function handleSubmit() {
       ...updatedUser,
     })
 
-    ElMessage.success('个人信息已更新')
+    feedbackMessage.success('个人信息已更新')
   } finally {
     loading.value = false
   }
@@ -261,8 +260,8 @@ async function handleRealNameVerify() {
       ...userStore.userInfo,
       ...verifiedUser,
     })
-    realNameFormRef.value?.clearValidate()
-    ElMessage.success('实名认证已完成')
+    realNameFormRef.value?.restoreValidation()
+    feedbackMessage.success('实名认证已完成')
   } finally {
     realNameForm.idCardNo = ''
     realNameLoading.value = false
@@ -271,7 +270,7 @@ async function handleRealNameVerify() {
 
 function handleReset() {
   syncForm(userInfo.value)
-  formRef.value?.clearValidate()
+  formRef.value?.restoreValidation()
 }
 
 watch(
@@ -289,271 +288,222 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="user-page">
-    <el-card v-if="!isAdminUser" shadow="never" class="user-page__card" v-loading="profileLoading">
-      <template #header>
-        <div class="user-page__card-head">
-          <span>实名认证</span>
-          <el-tag effect="plain" :type="realNameStatusMeta.type">
-            {{ realNameStatusMeta.label }}
-          </el-tag>
-        </div>
-      </template>
+  <div class="grid gap-5">
+    <n-spin :show="profileLoading">
+      <n-card
+        v-if="!isAdminUser"
+        :bordered="false"
+        class="profile-card"
+        content-class="!p-5 md:!p-6"
+        header-class="!px-5 !pt-5 !pb-0 md:!px-6 md:!pt-6"
+      >
+        <template #header>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 class="m-0 text-lg font-semibold text-slate-950">实名认证</h2>
+              <p class="m-0 mt-1 text-sm leading-6 text-slate-500">完善实名信息后，可提升账号可信度。</p>
+            </div>
+            <n-tag :type="realNameStatusMeta.type" round>
+              {{ realNameStatusMeta.label }}
+            </n-tag>
+          </div>
+        </template>
 
-      <div class="real-name-summary">
-        <div>
-          <span>真实姓名</span>
-          <strong>{{ userInfo.realName || '暂无' }}</strong>
-        </div>
-        <div>
-          <span>证件号码</span>
-          <strong>{{ userInfo.idCardMasked || '认证后展示脱敏号码' }}</strong>
-        </div>
-        <div>
-          <span>认证时间</span>
-          <strong>{{ userInfo.realNameTime ? userInfo.realNameTime.replace('T', ' ') : '暂无' }}</strong>
-        </div>
-      </div>
-
-      <el-form ref="realNameFormRef" :model="realNameForm" :rules="realNameRules" label-position="top"
-        @submit.prevent="handleRealNameVerify">
-        <div class="user-page__grid">
-          <el-form-item label="真实姓名" prop="realName">
-            <el-input v-model.trim="realNameForm.realName" size="large" :disabled="userStore.isRealNameVerified"
-              clearable />
-          </el-form-item>
-          <el-form-item label="身份证号" prop="idCardNo">
-            <el-input v-model.trim="realNameForm.idCardNo" size="large" placeholder="仅用于本次认证提交" clearable
-              :disabled="userStore.isRealNameVerified" />
-          </el-form-item>
-        </div>
-        <div class="user-page__actions">
-          <el-button type="primary" size="large" :loading="realNameLoading" :disabled="userStore.isRealNameVerified"
-            @click="handleRealNameVerify">
-            {{ userStore.isRealNameVerified ? '已完成认证' : '提交认证' }}
-          </el-button>
-        </div>
-      </el-form>
-    </el-card>
-
-    <el-card shadow="never" class="user-page__card" v-loading="profileLoading">
-      <template #header>
-        <div class="user-page__card-head">
-          <span>{{ isAdminUser ? '管理员资料' : '普通用户资料' }}</span>
-          <el-tag effect="plain" :type="isAdminUser ? 'warning' : 'success'">
-            {{ isAdminUser ? 'admin update' : 'normal update' }}
-          </el-tag>
-        </div>
-      </template>
-
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="handleSubmit">
-        <div class="user-page__grid">
-          <el-form-item v-if="isAdminUser" label="账号" prop="username">
-            <el-input v-model.trim="form.username" size="large" disabled />
-          </el-form-item>
-
-          <el-form-item v-else label="手机号" prop="phone">
-            <el-input v-model.trim="form.phone" size="large" disabled />
-          </el-form-item>
-
-          <el-form-item label="新密码">
-            <el-input v-model="form.password" type="password" show-password size="large" placeholder="不修改可留空"
-              clearable />
-          </el-form-item>
-
-          <el-form-item v-if="isAdminUser" label="真实姓名">
-            <el-input v-model.trim="form.realName" size="large" clearable />
-          </el-form-item>
-
-          <el-form-item v-else label="昵称">
-            <el-input v-model.trim="form.nickname" size="large" clearable />
-          </el-form-item>
-
-          <el-form-item v-if="isAdminUser" label="手机号" prop="phone">
-            <el-input v-model.trim="form.phone" size="large" clearable />
-          </el-form-item>
-
-          <el-form-item label="邮箱" prop="email">
-            <el-input v-model.trim="form.email" size="large" clearable />
-          </el-form-item>
-
-          <el-form-item v-if="isAdminUser" label="所属景区">
-            <el-select v-model="form.scenicSpot" size="large" placeholder="请选择所属景区" filterable clearable
-              :loading="scenicLoading">
-              <el-option v-for="item in scenicSelectOptions" :key="item.value" :label="item.label"
-                :value="item.value" />
-            </el-select>
-          </el-form-item>
-
-          <el-form-item v-else label="性别">
-            <el-select v-model="form.gender" placeholder="请选择性别" size="large" disabled>
-              <el-option :value="1" label="男" />
-              <el-option :value="2" label="女" />
-            </el-select>
-          </el-form-item>
-
-          <el-form-item v-if="!isAdminUser" label="年龄" prop="age">
-            <el-input v-model="form.age" size="large" disabled />
-          </el-form-item>
-
-          <el-form-item label="头像地址" class="user-page__full">
-            <el-input v-model.trim="form.avatarUrl" size="large" placeholder="头像地址暂不支持修改" disabled />
-          </el-form-item>
-
-          <el-form-item v-if="isAdminUser" label="备注" class="user-page__full">
-            <el-input v-model="form.remark" type="textarea" :rows="4" />
-          </el-form-item>
-
-          <el-form-item v-else label="兴趣标签" class="user-page__full">
-            <el-input v-model="form.interestTagsInput" type="textarea" :rows="4" placeholder="多个标签请用中文逗号或英文逗号分隔" />
-          </el-form-item>
+        <div class="mb-5 grid gap-3 md:grid-cols-3">
+          <div class="rounded-lg bg-slate-50 p-4">
+            <span class="block text-sm font-medium text-slate-500">真实姓名</span>
+            <strong class="mt-2 block break-words text-base text-slate-950">
+              {{ userInfo.realName || '暂无' }}
+            </strong>
+          </div>
+          <div class="rounded-lg bg-slate-50 p-4">
+            <span class="block text-sm font-medium text-slate-500">证件号码</span>
+            <strong class="mt-2 block break-words text-base text-slate-950">
+              {{ userInfo.idCardMasked || '认证后展示脱敏号码' }}
+            </strong>
+          </div>
+          <div class="rounded-lg bg-slate-50 p-4">
+            <span class="block text-sm font-medium text-slate-500">认证时间</span>
+            <strong class="mt-2 block break-words text-base text-slate-950">
+              {{ userInfo.realNameTime ? userInfo.realNameTime.replace('T', ' ') : '暂无' }}
+            </strong>
+          </div>
         </div>
 
-        <div class="user-page__actions">
-          <el-button type="primary" size="large" :loading="loading" @click="handleSubmit">
-            保存修改
-          </el-button>
-          <el-button size="large" @click="handleReset">重置为当前资料</el-button>
-        </div>
-      </el-form>
-    </el-card>
+        <n-form
+          ref="realNameFormRef"
+          :model="realNameForm"
+          :rules="realNameRules"
+          label-placement="top"
+          @submit.prevent="handleRealNameVerify"
+        >
+          <div class="grid gap-x-4 md:grid-cols-2">
+            <n-form-item label="真实姓名" path="realName">
+              <n-input
+                v-model:value="realNameForm.realName"
+                :disabled="userStore.isRealNameVerified"
+                clearable
+                placeholder="请输入真实姓名"
+                size="large"
+              />
+            </n-form-item>
+            <n-form-item label="身份证号" path="idCardNo">
+              <n-input
+                v-model:value="realNameForm.idCardNo"
+                :disabled="userStore.isRealNameVerified"
+                clearable
+                placeholder="仅用于本次认证提交"
+                size="large"
+              />
+            </n-form-item>
+          </div>
+          <div class="flex flex-wrap gap-3 pt-1">
+            <n-button
+              type="primary"
+              size="large"
+              :loading="realNameLoading"
+              :disabled="userStore.isRealNameVerified"
+              @click="handleRealNameVerify"
+            >
+              {{ userStore.isRealNameVerified ? '已完成认证' : '提交认证' }}
+            </n-button>
+          </div>
+        </n-form>
+      </n-card>
+    </n-spin>
+
+    <n-spin :show="profileLoading">
+      <n-card
+        :bordered="false"
+        class="profile-card"
+        content-class="!p-5 md:!p-6"
+        header-class="!px-5 !pt-5 !pb-0 md:!px-6 md:!pt-6"
+      >
+        <template #header>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 class="m-0 text-lg font-semibold text-slate-950">
+                {{ isAdminUser ? '管理员资料' : '普通用户资料' }}
+              </h2>
+              <p class="m-0 mt-1 text-sm leading-6 text-slate-500">
+                {{ isAdminUser ? '维护管理员基础信息与所属景区。' : '维护昵称、邮箱与兴趣标签。' }}
+              </p>
+            </div>
+            <n-tag :type="profileTagType" round>
+              {{ profileTagText }}
+            </n-tag>
+          </div>
+        </template>
+
+        <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" @submit.prevent="handleSubmit">
+          <div class="grid gap-x-4 md:grid-cols-2">
+            <n-form-item v-if="isAdminUser" label="账号" path="username">
+              <n-input v-model:value="form.username" disabled size="large" />
+            </n-form-item>
+
+            <n-form-item v-else label="手机号" path="phone">
+              <n-input v-model:value="form.phone" disabled size="large" />
+            </n-form-item>
+
+            <n-form-item label="新密码" path="password">
+              <n-input
+                v-model:value="form.password"
+                clearable
+                placeholder="不修改可留空"
+                show-password-on="click"
+                size="large"
+                type="password"
+              />
+            </n-form-item>
+
+            <n-form-item v-if="isAdminUser" label="真实姓名" path="realName">
+              <n-input v-model:value="form.realName" clearable placeholder="请输入真实姓名" size="large" />
+            </n-form-item>
+
+            <n-form-item v-else label="昵称" path="nickname">
+              <n-input v-model:value="form.nickname" clearable placeholder="请输入昵称" size="large" />
+            </n-form-item>
+
+            <n-form-item v-if="isAdminUser" label="手机号" path="phone">
+              <n-input v-model:value="form.phone" clearable placeholder="请输入手机号" size="large" />
+            </n-form-item>
+
+            <n-form-item label="邮箱" path="email">
+              <n-input v-model:value="form.email" clearable placeholder="请输入邮箱" size="large" />
+            </n-form-item>
+
+            <n-form-item v-if="isAdminUser" label="所属景区" path="scenicSpot">
+              <n-select
+                v-model:value="form.scenicSpot"
+                clearable
+                filterable
+                :loading="scenicLoading"
+                :options="scenicSelectOptions"
+                placeholder="请选择所属景区"
+                size="large"
+              />
+            </n-form-item>
+
+            <n-form-item v-else label="性别" path="gender">
+              <n-select
+                v-model:value="form.gender"
+                disabled
+                :options="[
+                  { value: 1, label: '男' },
+                  { value: 2, label: '女' },
+                ]"
+                placeholder="请选择性别"
+                size="large"
+              />
+            </n-form-item>
+
+            <n-form-item v-if="!isAdminUser" label="年龄" path="age">
+              <n-input v-model:value="form.age" disabled size="large" />
+            </n-form-item>
+
+            <n-form-item label="头像地址" path="avatarUrl" class="md:col-span-2">
+              <n-input
+                v-model:value="form.avatarUrl"
+                disabled
+                placeholder="头像地址暂不支持修改"
+                size="large"
+              />
+            </n-form-item>
+
+            <n-form-item v-if="isAdminUser" label="备注" path="remark" class="md:col-span-2">
+              <n-input v-model:value="form.remark" type="textarea" :autosize="{ minRows: 4, maxRows: 6 }" />
+            </n-form-item>
+
+            <n-form-item v-else label="兴趣标签" path="interestTagsInput" class="md:col-span-2">
+              <n-input
+                v-model:value="form.interestTagsInput"
+                type="textarea"
+                placeholder="多个标签请用中文逗号或英文逗号分隔"
+                :autosize="{ minRows: 4, maxRows: 6 }"
+              />
+            </n-form-item>
+          </div>
+
+          <div class="flex flex-wrap gap-3 pt-2">
+            <n-button type="primary" size="large" :loading="loading" @click="handleSubmit">
+              保存修改
+            </n-button>
+            <n-button size="large" @click="handleReset">重置为当前资料</n-button>
+          </div>
+        </n-form>
+      </n-card>
+    </n-spin>
   </div>
 </template>
 
 <style scoped>
-.user-page {
-  display: grid;
-  gap: 20px;
-}
-
-.user-page__hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr);
-  gap: 24px;
-  padding: 28px;
-}
-
-.user-page__eyebrow {
-  margin: 0 0 10px;
-  color: #0f766e;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.user-page__title {
-  margin: 0;
-  color: #0f172a;
-  font-size: clamp(28px, 4vw, 38px);
-}
-
-.user-page__desc {
-  margin: 14px 0 0;
-  color: #475569;
-  line-height: 1.8;
-}
-
-.user-page__summary {
-  display: grid;
-  gap: 12px;
-}
-
-.user-page__summary-item {
-  padding: 18px;
-  border-radius: 20px;
-  background: rgba(248, 250, 252, 0.9);
-}
-
-.user-page__summary-item span {
-  display: block;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.user-page__summary-item strong {
-  display: block;
-  margin-top: 8px;
-  color: #0f172a;
-  font-size: 16px;
-  line-height: 1.6;
-  word-break: break-word;
-}
-
-.user-page__card {
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.user-page__card :deep(.el-card__header) {
-  border-bottom: 0;
-}
-
-.user-page__card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  color: #0f172a;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.user-page__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
-}
-
-.real-name-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.real-name-summary div {
-  display: grid;
-  gap: 6px;
-  padding: 14px;
+.profile-card {
   border-radius: 8px;
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
 }
 
-.real-name-summary span {
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.real-name-summary strong {
-  color: #0f172a;
-  font-size: 15px;
-  word-break: break-word;
-}
-
-.user-page__full {
-  grid-column: 1 / -1;
-}
-
-.user-page__number {
-  width: 100%;
-}
-
-.user-page__actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-top: 14px;
-}
-
-@media (max-width: 1080px) {
-
-  .user-page__hero,
-  .user-page__grid,
-  .real-name-summary {
-    grid-template-columns: 1fr;
-  }
+.profile-card :deep(.n-card-header) {
+  border-bottom: 0;
 }
 </style>

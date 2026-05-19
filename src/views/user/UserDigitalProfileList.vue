@@ -104,7 +104,6 @@ onMounted(() => {
       </template>
 
       <el-table :data="pageData.records" v-loading="loading" stripe class="profile-page__table" row-key="id">
-        <el-table-column prop="id" label="ID" min-width="76" />
         <el-table-column prop="userId" label="用户 ID" min-width="100" />
         <el-table-column prop="profileName" label="画像名称" min-width="180" show-overflow-tooltip />
         <el-table-column prop="travelStyle" label="旅行风格" min-width="110" show-overflow-tooltip />

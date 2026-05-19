@@ -4,6 +4,8 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Microphone, Promotion } from '@element-plus/icons-vue'
 import { pinia, useUserStore } from '@/stores'
+import guideAvatarImage from '@/assets/famale.png'
+import serviceAvatarImage from '@/assets/male.png'
 import {
   agentChatApi,
   fetchDigitalHuman,
@@ -40,16 +42,17 @@ const digitalHumanAvatars = [
     id: 'guide-female-01',
     name: '导游小婉',
     description: '适合景区讲解和游客问答',
-    previewImage: '',
-    apiUrl: import.meta.env.VITE_DIGITAL_HUMAN_GUIDE_API_URL || import.meta.env.VITE_DIGITAL_HUMAN_API_URL || 'http://localhost:8010',
+    // 弹窗左侧展示图，后续新增形象时只需要在这里补充对应图片。
+    previewImage: guideAvatarImage,
+    apiUrl: import.meta.env.VITE_DIGITAL_HUMAN_GUIDE_API_URL || 'http://localhost:8011',
     enabled: true,
   },
   {
     id: 'service-male-01',
     name: '客服小舟',
     description: '适合咨询服务和标准问答',
-    previewImage: '',
-    apiUrl: import.meta.env.VITE_DIGITAL_HUMAN_SERVICE_API_URL || import.meta.env.VITE_DIGITAL_HUMAN_API_URL || 'http://localhost:8010',
+    previewImage: serviceAvatarImage,
+    apiUrl: import.meta.env.VITE_DIGITAL_HUMAN_SERVICE_API_URL || 'http://localhost:8010',
     enabled: true,
   },
 ]
@@ -189,7 +192,15 @@ const renderMarkdown = (value = '') => {
   return html.join('')
 }
 
-const sanitizeReplyText = (text) => text.replace(/\*\*|\*|#|\[|\]|\(|\)/g, '').replace(/\s+\n/g, '\n').trim()
+const removeEmojiForSpeech = (text = '') => String(text)
+  // 数字人播报前去掉 emoji 及其组合符，避免语音把表情名称读出来。
+  .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D]/gu, '')
+
+const sanitizeReplyText = (text) => removeEmojiForSpeech(text)
+  .replace(/\*\*|\*|#|\[|\]|\(|\)/g, '')
+  .replace(/[ \t]{2,}/g, ' ')
+  .replace(/\s+\n/g, '\n')
+  .trim()
 
 const syncChatState = (payload = {}) => {
   chatState.scenicAreaId = payload.scenicAreaId ?? chatState.scenicAreaId
@@ -784,8 +795,8 @@ onUnmounted(() => {
     <Teleport v-if="headerTarget" :to="headerTarget">
       <div class="chat-titlebar-actions">
         <el-tag :type="statusType" effect="dark" round>{{ statusText }}</el-tag>
-        <el-button v-if="connectionStatus !== 'connected'" class="chat-titlebar-connect" plain type="success"
-          round :loading="connectionStatus === 'connecting'" @click="handleConnectDigitalHuman">
+        <el-button v-if="connectionStatus !== 'connected'" class="chat-titlebar-connect" plain type="success" round
+          :loading="connectionStatus === 'connecting'" @click="handleConnectDigitalHuman">
           {{ connectionStatus === 'connecting' ? '连接中' : isMobile ? '连接' : '连接数字人' }}
         </el-button>
         <el-button v-else class="chat-titlebar-connect" plain type="danger" round @click="stop()">
@@ -825,11 +836,19 @@ onUnmounted(() => {
           <div class="composer">
             <el-input v-model="userInput" size="large" clearable :disabled="loading" placeholder="请输入你想咨询的问题..."
               @keydown.enter.prevent="sendChatMessage()" />
-            <el-button type="primary" size="large" :loading="loading" @click="sendChatMessage()">发送提问</el-button>
-            <button type="button" class="voice" :class="{ recording: isVoiceRecording }"
+            <el-button class="composer-send" type="primary" size="large" circle :loading="loading" aria-label="发送"
+              @click="sendChatMessage()">
+              <el-icon v-if="!loading">
+                <Promotion />
+              </el-icon>
+            </el-button>
+            <button type="button" class="voice composer-voice" :class="{ recording: isVoiceRecording }"
+              :aria-label="isVoiceRecording ? '松开发送' : '按住说话'" :title="isVoiceRecording ? '松开发送' : '按住说话'"
               @mousedown="handleVoiceRecordStart" @mouseup="handleVoiceRecordStop" @mouseleave="handleVoiceRecordStop"
               @touchstart.prevent="handleVoiceRecordStart" @touchend="handleVoiceRecordStop">
-              {{ isVoiceRecording ? '松开发送' : '按住说话' }}
+              <el-icon>
+                <Microphone />
+              </el-icon>
             </button>
           </div>
         </div>
@@ -850,7 +869,8 @@ onUnmounted(() => {
     <template v-else>
       <section class="mobile-shell">
         <section ref="chatArea" class="stream mobile-chat-panel">
-          <div class="mobile-digital-human-window" :class="{ 'mobile-digital-human-window--active': connectionStatus === 'connected' }"
+          <div class="mobile-digital-human-window"
+            :class="{ 'mobile-digital-human-window--active': connectionStatus === 'connected' }"
             :aria-hidden="connectionStatus !== 'connected'">
             <video id="digital-human-video" ref="digitalHumanVideo" class="digital-human-source"
               :class="{ 'digital-human-source--fallback': renderFallbackActive }" autoplay playsinline muted></video>
@@ -886,25 +906,32 @@ onUnmounted(() => {
             placeholder="请输入你想咨询的问题..." @keydown.enter.prevent="sendChatMessage()" />
           <el-button class="mobile-send" type="primary" circle :loading="loading" aria-label="发送"
             @click="sendChatMessage()">
-            <el-icon v-if="!loading"><Promotion /></el-icon>
+            <el-icon v-if="!loading">
+              <Promotion />
+            </el-icon>
           </el-button>
           <button type="button" class="voice mobile-voice" :class="{ recording: isVoiceRecording }"
             :aria-label="isVoiceRecording ? '松开发送' : '按住说话'" :title="isVoiceRecording ? '松开发送' : '按住说话'"
             @mousedown="handleVoiceRecordStart" @mouseup="handleVoiceRecordStop" @mouseleave="handleVoiceRecordStop"
             @touchstart.prevent="handleVoiceRecordStart" @touchend="handleVoiceRecordStop">
-            <el-icon><Microphone /></el-icon>
+            <el-icon>
+              <Microphone />
+            </el-icon>
           </button>
         </section>
 
       </section>
     </template>
 
-    <el-dialog v-model="avatarDrawerVisible" title="选择数字人形象" :width="isMobile ? '88vw' : '420px'"
-      class="avatar-dialog" append-to-body>
+    <el-dialog v-model="avatarDrawerVisible" title="选择数字人形象" :width="isMobile ? '92vw' : '460px'" class="avatar-dialog"
+      append-to-body>
       <div class="avatar-list">
         <button v-for="avatar in enabledDigitalHumanAvatars" :key="avatar.id" type="button" class="avatar-option"
           :class="{ 'avatar-option--active': avatar.id === selectedAvatarId }" @click="handleAvatarSelect(avatar)">
-          <span class="avatar-option__preview">{{ avatar.name.slice(0, 1) }}</span>
+          <span class="avatar-option__preview">
+            <img v-if="avatar.previewImage" :src="avatar.previewImage" :alt="avatar.name">
+            <span v-else>{{ avatar.name.slice(0, 1) }}</span>
+          </span>
           <span class="avatar-option__content">
             <strong>{{ avatar.name }}</strong>
             <small>{{ avatar.description || '标准数字人形象' }}</small>
@@ -1148,6 +1175,22 @@ onUnmounted(() => {
   border-radius: 18px
 }
 
+.composer-send,
+.composer-voice {
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  min-height: 56px;
+  flex: 0 0 56px;
+  padding: 0;
+  border-radius: 50%
+}
+
+.composer-send :deep(.el-icon),
+.composer-voice .el-icon {
+  font-size: 22px
+}
+
 .voice {
   min-width: 128px;
   min-height: 56px;
@@ -1157,6 +1200,10 @@ onUnmounted(() => {
   color: #fff;
   font-weight: 700;
   cursor: pointer
+}
+
+.voice.composer-voice {
+  min-width: 56px
 }
 
 .voice.recording {
@@ -1412,8 +1459,8 @@ onUnmounted(() => {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  gap: 14px;
+  padding: 12px;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #fff;
@@ -1428,16 +1475,24 @@ onUnmounted(() => {
 }
 
 .avatar-option__preview {
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 14px;
   background: linear-gradient(135deg, #dbeafe, #ccfbf1);
   color: #1d4ed8;
-  font-weight: 800
+  font-weight: 800;
+  overflow: hidden
+}
+
+.avatar-option__preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover
 }
 
 .avatar-option__content {
@@ -1515,6 +1570,17 @@ onUnmounted(() => {
 
   .composer {
     grid-template-columns: 1fr
+  }
+
+  .avatar-option {
+    gap: 12px;
+    padding: 11px
+  }
+
+  .avatar-option__preview {
+    width: 60px;
+    height: 60px;
+    flex-basis: 60px
   }
 
   .voice,

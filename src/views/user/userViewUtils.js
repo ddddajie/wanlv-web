@@ -14,6 +14,15 @@ export function formatGender(gender) {
   return '未知'
 }
 
+// 实名状态由后端返回：0 未实名，1 已实名。
+export function formatRealNameStatus(realNameStatus) {
+  return Number(realNameStatus) === 1 ? '已实名' : '未实名'
+}
+
+export function getRealNameStatusTagType(realNameStatus) {
+  return Number(realNameStatus) === 1 ? 'success' : 'warning'
+}
+
 export function parseInterestTags(value) {
   if (!value) return []
 
