@@ -366,18 +366,26 @@ onBeforeUnmount(() => {
               id="dashboard-user-reservation-toolbar"
               class="dashboard-content__header-tools"
             ></div>
+
+            <div
+              v-if="activeMenu === 'chat-page'"
+              id="dashboard-chat-toolbar"
+              class="dashboard-content__header-tools"
+            ></div>
           </div>
         </header>
 
         <div class="dashboard-content__body" :class="{
           'dashboard-content__body--map': activeMenu === 'tourist-map',
+          'dashboard-content__body--chat': activeMenu === 'chat-page',
           'dashboard-content__body--screen': isDashboardScreenMenu,
         }">
           <UserIndex v-if="activeMenu === 'user-index'" />
 
           <UserProfileEdit v-else-if="activeMenu === 'profile-edit'" />
 
-          <Chat v-else-if="activeMenu === 'chat-page'" embedded @navigate="handleActionNavigate" />
+          <Chat v-else-if="activeMenu === 'chat-page'" embedded header-target="#dashboard-chat-toolbar"
+            @navigate="handleActionNavigate" />
 
           <TouristMap
             v-else-if="activeMenu === 'tourist-map'"
@@ -755,6 +763,11 @@ onBeforeUnmount(() => {
   overflow: hidden;
   padding: 16px 18px 18px 22px;
   background: #f8fafc;
+}
+
+.dashboard-content__body--chat {
+  /* 智能问答固定为一屏工作区，滚动交给内部聊天记录区域。 */
+  overflow: hidden;
 }
 
 .dashboard-content__map-view {

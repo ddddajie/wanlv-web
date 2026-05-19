@@ -342,7 +342,6 @@ onMounted(fetchScenicOptions)
 
     <aside class="pointer-events-none absolute right-1 top-4 z-[6]">
       <UserMapControls :loading="isLoadingMap" :info-open="isScenicInfoOpen" :route-open="isRoutePanelOpen"
-        @zoom-in="mapCanvasRef?.zoomIn()" @zoom-out="mapCanvasRef?.zoomOut()" @fit-view="mapCanvasRef?.fitView()"
         @locate="mapCanvasRef?.locate()" @refresh="fetchMapData" @toggle-info="isScenicInfoOpen = !isScenicInfoOpen"
         @toggle-routes="isRoutePanelOpen = !isRoutePanelOpen" />
     </aside>

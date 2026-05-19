@@ -1,12 +1,9 @@
 <script setup>
 import {
-  AddOutline,
   FlagOutline,
   InformationCircleOutline,
   LocateOutline,
-  NavigateOutline,
   RefreshOutline,
-  RemoveOutline,
 } from '@vicons/ionicons5'
 
 defineProps({
@@ -24,7 +21,7 @@ defineProps({
   },
 })
 
-const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh', 'toggle-info', 'toggle-routes'])
+const emit = defineEmits(['locate', 'refresh', 'toggle-info', 'toggle-routes'])
 </script>
 
 <template>
@@ -61,34 +58,7 @@ const emit = defineEmits(['zoom-in', 'zoom-out', 'fit-view', 'locate', 'refresh'
       </n-tooltip>
     </div>
 
-    <div class="user-map-controls__stack" aria-label="地图缩放">
-      <n-tooltip placement="left">
-        <template #trigger>
-          <n-button quaternary circle class="user-map-controls__button" @click="emit('zoom-in')">
-            <template #icon><n-icon><AddOutline /></n-icon></template>
-          </n-button>
-        </template>
-        放大地图
-      </n-tooltip>
-      <n-tooltip placement="left">
-        <template #trigger>
-          <n-button quaternary circle class="user-map-controls__button" @click="emit('zoom-out')">
-            <template #icon><n-icon><RemoveOutline /></n-icon></template>
-          </n-button>
-        </template>
-        缩小地图
-      </n-tooltip>
-    </div>
-
     <div class="user-map-controls__stack" aria-label="地图工具">
-      <n-tooltip placement="left">
-        <template #trigger>
-          <n-button quaternary circle class="user-map-controls__button" @click="emit('fit-view')">
-            <template #icon><n-icon><NavigateOutline /></n-icon></template>
-          </n-button>
-        </template>
-        回到景区
-      </n-tooltip>
       <n-tooltip placement="left">
         <template #trigger>
           <n-button quaternary circle class="user-map-controls__button" @click="emit('locate')">

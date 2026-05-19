@@ -2,11 +2,10 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useScenicWarmReminder } from '@/composables/useScenicWarmReminder'
+import { Microphone, Promotion } from '@element-plus/icons-vue'
 import { pinia, useUserStore } from '@/stores'
 import {
   agentChatApi,
-  bindSessionScenicAreaApi,
   fetchDigitalHuman,
   fetchInterruptTalk,
   sendWebRTCOffer,
@@ -16,6 +15,10 @@ const props = defineProps({
   embedded: {
     type: Boolean,
     default: false,
+  },
+  headerTarget: {
+    type: String,
+    default: '',
   },
 })
 
@@ -27,6 +30,8 @@ const SPEECH_START_DELAY = 1200
 const BASE_CHAR_INTERVAL = 185
 const FINISHED_HIDE_DELAY = 900
 const MOBILE_BREAKPOINT = 768
+const PC_DIGITAL_HUMAN_RENDER_CONFIG = Object.freeze({ width: 540, height: 960, fps: 30 })
+const MOBILE_DIGITAL_HUMAN_RENDER_CONFIG = Object.freeze({ width: 270, height: 480, fps: 18 })
 const DIGITAL_HUMAN_AVATAR_STORAGE_KEY = 'wanlv:selected-digital-human-avatar'
 const SCENIC_NAME_CACHE_KEY = 'wanlv:scenic-area-name-cache'
 
@@ -51,13 +56,13 @@ const digitalHumanAvatars = [
 
 const userInput = ref('')
 const loading = ref(false)
-const bindLoading = ref(false)
 const connectionStatus = ref('disconnected')
 const digitalHumanSessionId = ref(0)
 const isVoiceRecording = ref(false)
-const lastQuestion = ref('')
 const messages = ref([])
 const chatArea = ref(null)
+const digitalHumanVideo = ref(null)
+const digitalHumanCanvas = ref(null)
 const pc = ref(null)
 const mediaRecorder = ref(null)
 const recognition = ref(null)
@@ -66,28 +71,19 @@ const aiBubbleVisible = ref(false)
 const aiBubbleText = ref('')
 const aiBubbleFullText = ref('')
 const isMobile = ref(false)
+const renderFallbackActive = ref(false)
 const avatarDrawerVisible = ref(false)
-const activeMobileTab = ref('chat')
-const mobileInfoDrawerVisible = ref(false)
 const selectedAvatarId = ref(digitalHumanAvatars[0].id)
 
 const chatState = reactive({
-  sessionId: null,
-  sessionCode: null,
-  reportDate: null,
   scenicAreaId: null,
-  scenicAreaConfirmed: 0,
-  sessionType: null,
-  detectedScenicAreaId: null,
-  detectedScenicAreaName: '',
-  detectionConfidence: null,
-  needScenicAreaConfirm: false,
 })
 
 let speechStartTimer = null
 let speechTypeTimer = null
 let bubbleHideTimer = null
 let activeSpeechToken = 0
+let digitalHumanRenderer = null
 
 const toPositiveNumber = (value) => {
   const numberValue = Number(value)
@@ -111,25 +107,10 @@ const routeScenicAreaName = computed(() =>
 const statusText = computed(() => ({ connected: '已连接', connecting: '连接中...', disconnected: '未连接' }[connectionStatus.value] || '未连接'))
 const statusType = computed(() => ({ connected: 'success', connecting: 'warning', disconnected: 'info' }[connectionStatus.value] || 'info'))
 const bubbleStatusText = computed(() => ({ idle: '待命中', queued: '准备播报', speaking: '播报中', finished: '播报完成' }[speechState.value] || '待命中'))
-const scenicAreaLabel = computed(() => chatState.detectedScenicAreaName || routeScenicAreaName.value || (chatState.scenicAreaId ? `景区 #${chatState.scenicAreaId}` : '未确认'))
-const warmReminderScenicAreaId = computed(() => chatState.scenicAreaId ?? routeScenicAreaId.value)
-const warmReminderScenicAreaName = computed(() => chatState.detectedScenicAreaName || routeScenicAreaName.value)
-const scenicConfidenceText = computed(() => typeof chatState.detectionConfidence === 'number' ? `${Math.round(chatState.detectionConfidence * 100)}%` : '--')
-const hasScenicPrompt = computed(() => Boolean(chatState.needScenicAreaConfirm || chatState.detectedScenicAreaName))
-const canBindDetectedScenic = computed(() => Boolean(chatState.detectedScenicAreaId && currentUserId.value))
 const enabledDigitalHumanAvatars = computed(() => digitalHumanAvatars.filter((item) => item.enabled))
 const selectedAvatar = computed(() =>
   enabledDigitalHumanAvatars.value.find((item) => item.id === selectedAvatarId.value) || enabledDigitalHumanAvatars.value[0],
 )
-const scenicStatusText = computed(() => {
-  if (chatState.scenicAreaConfirmed === 1) return '已确认'
-  if (hasScenicPrompt.value) return '待确认'
-  return '未确认'
-})
-useScenicWarmReminder({
-  scenicAreaId: warmReminderScenicAreaId,
-  scenicAreaName: warmReminderScenicAreaName,
-})
 
 const scrollToChatBottom = async () => {
   await nextTick()
@@ -211,23 +192,7 @@ const renderMarkdown = (value = '') => {
 const sanitizeReplyText = (text) => text.replace(/\*\*|\*|#|\[|\]|\(|\)/g, '').replace(/\s+\n/g, '\n').trim()
 
 const syncChatState = (payload = {}) => {
-  chatState.sessionId = payload.sessionId ?? chatState.sessionId
-  chatState.sessionCode = payload.sessionCode ?? chatState.sessionCode
-  chatState.reportDate = payload.reportDate ?? chatState.reportDate
-  chatState.sessionType = payload.sessionType ?? chatState.sessionType
   chatState.scenicAreaId = payload.scenicAreaId ?? chatState.scenicAreaId
-  chatState.scenicAreaConfirmed = payload.scenicAreaConfirmed ?? chatState.scenicAreaConfirmed
-  if (payload.scenicAreaId) {
-    chatState.detectedScenicAreaId = null
-    chatState.detectedScenicAreaName = ''
-    chatState.detectionConfidence = null
-    chatState.needScenicAreaConfirm = false
-    return
-  }
-  chatState.detectedScenicAreaId = payload.detectedScenicAreaId ?? null
-  chatState.detectedScenicAreaName = payload.detectedScenicAreaName ?? ''
-  chatState.detectionConfidence = payload.detectionConfidence ?? null
-  chatState.needScenicAreaConfirm = Boolean(payload.needScenicAreaConfirm)
 }
 
 const clearSpeechTimers = () => {
@@ -282,7 +247,276 @@ const startSimulatedSpeech = (text) => {
   speechStartTimer = window.setTimeout(() => runTypewriter(token, 0), SPEECH_START_DELAY)
 }
 
+const getDigitalHumanRenderConfig = () =>
+  isMobile.value ? MOBILE_DIGITAL_HUMAN_RENDER_CONFIG : PC_DIGITAL_HUMAN_RENDER_CONFIG
+
+class DigitalHumanRenderer {
+  constructor(canvas, getConfig) {
+    this.canvas = canvas
+    this.getConfig = getConfig
+    this.video = null
+    this.gl = null
+    this.program = null
+    this.texture = null
+    this.positionBuffer = null
+    this.texCoordBuffer = null
+    this.frameId = null
+    this.running = false
+    this.lastRenderTime = 0
+    this.locations = null
+  }
+
+  start(videoElement) {
+    this.stop()
+    this.video = videoElement
+    if (!this.canvas || !this.video || !this.initWebGL()) return false
+    this.resize()
+    this.running = true
+    this.lastRenderTime = 0
+    this.frameId = window.requestAnimationFrame((time) => this.render(time))
+    return true
+  }
+
+  stop() {
+    if (this.frameId) window.cancelAnimationFrame(this.frameId)
+    this.frameId = null
+    this.running = false
+    this.clear()
+  }
+
+  resize() {
+    if (!this.canvas || !this.gl) return
+    const { width, height } = this.getConfig()
+    if (this.canvas.width !== width) this.canvas.width = width
+    if (this.canvas.height !== height) this.canvas.height = height
+    this.gl.viewport(0, 0, width, height)
+  }
+
+  destroy() {
+    this.stop()
+    if (this.gl) {
+      if (this.texture) this.gl.deleteTexture(this.texture)
+      if (this.positionBuffer) this.gl.deleteBuffer(this.positionBuffer)
+      if (this.texCoordBuffer) this.gl.deleteBuffer(this.texCoordBuffer)
+      if (this.program) this.gl.deleteProgram(this.program)
+    }
+    this.video = null
+    this.gl = null
+    this.program = null
+    this.texture = null
+    this.positionBuffer = null
+    this.texCoordBuffer = null
+    this.locations = null
+  }
+
+  initWebGL() {
+    if (this.gl && this.program) return true
+    const gl = this.canvas.getContext('webgl', {
+      alpha: true,
+      antialias: true,
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: false,
+    })
+    if (!gl) return false
+
+    const vertexShader = this.createShader(gl, gl.VERTEX_SHADER, `
+      attribute vec2 a_position;
+      attribute vec2 a_texCoord;
+      varying vec2 v_texCoord;
+      void main() {
+        gl_Position = vec4(a_position, 0.0, 1.0);
+        v_texCoord = a_texCoord;
+      }
+    `)
+    const fragmentShader = this.createShader(gl, gl.FRAGMENT_SHADER, `
+      precision mediump float;
+      uniform sampler2D u_video;
+      varying vec2 v_texCoord;
+      void main() {
+        vec4 color = texture2D(u_video, v_texCoord);
+        float maxRedBlue = max(color.r, color.b);
+        float greenScore = color.g - maxRedBlue;
+        float greenDominant = step(0.35, color.g) * step(0.11, greenScore) *
+          step(color.r * 1.18, color.g) * step(color.b * 1.18, color.g);
+        float matte = smoothstep(0.11, 0.34, greenScore) * greenDominant;
+        if (matte > 0.96) discard;
+        float alpha = 1.0 - matte;
+        color.g = mix(min(color.g, maxRedBlue * 0.92), color.g, step(0.98, alpha));
+        gl_FragColor = vec4(color.rgb, alpha);
+      }
+    `)
+    const program = this.createProgram(gl, vertexShader, fragmentShader)
+    if (!program) return false
+
+    this.gl = gl
+    this.program = program
+    this.locations = {
+      position: gl.getAttribLocation(program, 'a_position'),
+      texCoord: gl.getAttribLocation(program, 'a_texCoord'),
+      video: gl.getUniformLocation(program, 'u_video'),
+    }
+    this.positionBuffer = this.createBuffer(gl, new Float32Array([
+      -1, -1,
+      1, -1,
+      -1, 1,
+      -1, 1,
+      1, -1,
+      1, 1,
+    ]))
+    this.texCoordBuffer = this.createBuffer(gl, new Float32Array([
+      0, 0,
+      1, 0,
+      0, 1,
+      0, 1,
+      1, 0,
+      1, 1,
+    ]))
+    this.texture = gl.createTexture()
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    gl.clearColor(0, 0, 0, 0)
+    return true
+  }
+
+  createShader(gl, type, source) {
+    const shader = gl.createShader(type)
+    if (!shader) return null
+    gl.shaderSource(shader, source)
+    gl.compileShader(shader)
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.warn('Digital human shader compile failed:', gl.getShaderInfoLog(shader))
+      gl.deleteShader(shader)
+      return null
+    }
+    return shader
+  }
+
+  createProgram(gl, vertexShader, fragmentShader) {
+    if (!vertexShader || !fragmentShader) return null
+    const program = gl.createProgram()
+    if (!program) return null
+    gl.attachShader(program, vertexShader)
+    gl.attachShader(program, fragmentShader)
+    gl.linkProgram(program)
+    gl.deleteShader(vertexShader)
+    gl.deleteShader(fragmentShader)
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.warn('Digital human shader link failed:', gl.getProgramInfoLog(program))
+      gl.deleteProgram(program)
+      return null
+    }
+    return program
+  }
+
+  createBuffer(gl, data) {
+    const buffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
+    return buffer
+  }
+
+  clear() {
+    if (!this.gl || !this.canvas) return
+    this.gl.viewport(0, 0, this.canvas.width || 1, this.canvas.height || 1)
+    this.gl.clear(this.gl.COLOR_BUFFER_BIT)
+  }
+
+  render(time) {
+    if (!this.running || !this.gl || !this.video) return
+    const { fps } = this.getConfig()
+    const frameInterval = 1000 / fps
+    if (time - this.lastRenderTime >= frameInterval) {
+      this.drawFrame()
+      this.lastRenderTime = time
+    }
+    this.frameId = window.requestAnimationFrame((nextTime) => this.render(nextTime))
+  }
+
+  drawFrame() {
+    if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !this.video.videoWidth || !this.video.videoHeight) return
+    const gl = this.gl
+    this.resize()
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.useProgram(this.program)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    // 视频帧作为 WebGL 纹理时需要翻转 Y 轴，避免数字人上下颠倒。
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.video)
+    gl.uniform1i(this.locations.video, 0)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer)
+    gl.enableVertexAttribArray(this.locations.position)
+    gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0)
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer)
+    gl.enableVertexAttribArray(this.locations.texCoord)
+    gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0)
+    gl.drawArrays(gl.TRIANGLES, 0, 6)
+  }
+}
+
+const getDigitalHumanRenderer = () => {
+  if (!digitalHumanCanvas.value) return null
+  if (digitalHumanRenderer && digitalHumanRenderer.canvas !== digitalHumanCanvas.value) {
+    digitalHumanRenderer.destroy()
+    digitalHumanRenderer = null
+  }
+  if (!digitalHumanRenderer) {
+    digitalHumanRenderer = new DigitalHumanRenderer(digitalHumanCanvas.value, getDigitalHumanRenderConfig)
+  }
+  return digitalHumanRenderer
+}
+
+const stopDigitalHumanRender = () => {
+  digitalHumanRenderer?.stop()
+}
+
+const startDigitalHumanRender = async () => {
+  const video = digitalHumanVideo.value
+  const renderer = getDigitalHumanRenderer()
+  if (!video || !renderer) return
+  stopDigitalHumanRender()
+  await nextTick()
+  try {
+    await video.play()
+  } catch (error) {
+    console.warn('Digital human video autoplay failed:', error)
+  }
+  renderFallbackActive.value = !renderer.start(video)
+}
+
+const attachDigitalHumanVideoStream = async (stream) => {
+  const video = digitalHumanVideo.value || document.getElementById('digital-human-video')
+  if (!video) return
+  renderFallbackActive.value = false
+  stopDigitalHumanRender()
+  video.srcObject = stream
+  video.onloadedmetadata = startDigitalHumanRender
+  video.onplaying = startDigitalHumanRender
+  /* 数字人视频作为 WebGL 纹理源，连接后由 shader 完成绿幕抠像。 */
+  await startDigitalHumanRender()
+}
+
+const clearDigitalHumanMedia = () => {
+  stopDigitalHumanRender()
+  renderFallbackActive.value = false
+  const video = digitalHumanVideo.value || document.getElementById('digital-human-video')
+  const audio = document.getElementById('digital-human-audio')
+  if (video) {
+    video.onloadedmetadata = null
+    video.onplaying = null
+    video.srcObject = null
+  }
+  if (audio) audio.srcObject = null
+}
+
 const cleanupPeerConnection = () => {
+  clearDigitalHumanMedia()
   if (pc.value) pc.value.close()
   pc.value = null
 }
@@ -321,6 +555,10 @@ const start = async () => {
     pc.value.addEventListener('track', (event) => {
       const targetId = event.track.kind === 'video' ? 'digital-human-video' : 'digital-human-audio'
       const element = document.getElementById(targetId)
+      if (event.track.kind === 'video') {
+        attachDigitalHumanVideoStream(event.streams[0])
+        return
+      }
       if (element) element.srcObject = event.streams[0]
     })
     pc.value.addEventListener('connectionstatechange', () => {
@@ -328,6 +566,7 @@ const start = async () => {
       if (state === 'connected') return (connectionStatus.value = 'connected')
       if (['disconnected', 'failed', 'closed'].includes(state)) {
         connectionStatus.value = 'disconnected'
+        clearDigitalHumanMedia()
         resetSpeechBubble()
       }
     })
@@ -388,7 +627,6 @@ const sendChatMessage = async ({ presetText = '', messageType = 'text' } = {}) =
   if (!currentUserId.value) return ElMessage.error('当前登录用户不存在，无法发起聊天。')
   await interruptCurrentSpeech()
   addMessage(messageType === 'voice' ? 'voice' : 'user', message)
-  lastQuestion.value = message
   userInput.value = ''
   loading.value = true
   try {
@@ -398,8 +636,7 @@ const sendChatMessage = async ({ presetText = '', messageType = 'text' } = {}) =
       messageType,
       voiceText: messageType === 'voice' ? message : null,
       scenicAreaId: chatState.scenicAreaId ?? routeScenicAreaId.value,
-      scenicAreaSource: chatState.scenicAreaConfirmed === 1 ? 'USER_CONFIRMED' : routeScenicAreaId.value ? 'FRONTEND' : null,
-      scenicAreaConfirmed: chatState.scenicAreaConfirmed === 1 || routeScenicAreaId.value ? 1 : 0,
+      scenicAreaSource: routeScenicAreaId.value ? 'FRONTEND' : null,
       sourceType: routeScenicAreaId.value ? 'SCENIC_DETAIL' : 'GLOBAL_CHAT',
       sourceId: routeScenicAreaId.value ? String(routeScenicAreaId.value) : null,
     })
@@ -414,38 +651,6 @@ const sendChatMessage = async ({ presetText = '', messageType = 'text' } = {}) =
   }
 }
 
-const handleConfirmScenicArea = async () => {
-  if (!canBindDetectedScenic.value || bindLoading.value) return
-  bindLoading.value = true
-  try {
-    const sessionId = await bindSessionScenicAreaApi({
-      userId: currentUserId.value,
-      scenicAreaId: chatState.detectedScenicAreaId,
-      scenicAreaSource: 'USER_CONFIRMED',
-      scenicAreaConfirmed: 1,
-      sessionType: 'SCENIC_SERVICE',
-    })
-    chatState.sessionId = sessionId || chatState.sessionId
-    chatState.scenicAreaId = chatState.detectedScenicAreaId
-    chatState.scenicAreaConfirmed = 1
-    chatState.sessionType = 'SCENIC_SERVICE'
-    chatState.needScenicAreaConfirm = false
-    addMessage('system', `已绑定景区：${chatState.detectedScenicAreaName || `景区 #${chatState.detectedScenicAreaId}`}`)
-    ElMessage.success('景区已确认，后续会按景区服务模式继续对话。')
-  } catch (error) {
-    console.error('Failed to bind scenic area:', error)
-  } finally {
-    bindLoading.value = false
-  }
-}
-
-const handleDismissScenicPrompt = () => {
-  chatState.needScenicAreaConfirm = false
-  chatState.detectedScenicAreaId = null
-  chatState.detectedScenicAreaName = ''
-  chatState.detectionConfidence = null
-}
-
 const handleConnectDigitalHuman = () => {
   connectionStatus.value = 'connecting'
   start()
@@ -453,11 +658,6 @@ const handleConnectDigitalHuman = () => {
 
 const openAvatarSelector = () => {
   avatarDrawerVisible.value = true
-}
-
-const openMobileInfoDrawer = (tabName) => {
-  activeMobileTab.value = tabName
-  mobileInfoDrawerVisible.value = true
 }
 
 const handleAvatarSelect = async (avatar) => {
@@ -496,6 +696,7 @@ const handleAvatarSelect = async (avatar) => {
 const syncScreenMode = () => {
   if (typeof window === 'undefined') return
   isMobile.value = window.innerWidth < MOBILE_BREAKPOINT
+  digitalHumanRenderer?.resize()
 }
 
 const handleVoiceRecordStart = async () => {
@@ -541,9 +742,6 @@ const initSpeechRecognition = () => {
 const seedInitialContext = () => {
   if (!routeScenicAreaId.value) return
   chatState.scenicAreaId = routeScenicAreaId.value
-  chatState.scenicAreaConfirmed = 1
-  chatState.sessionType = 'SCENIC_SERVICE'
-  if (routeScenicAreaName.value) chatState.detectedScenicAreaName = routeScenicAreaName.value
   addMessage('system', routeScenicAreaName.value ? `已带入景区上下文：${routeScenicAreaName.value}` : `已带入景区上下文：景区 #${routeScenicAreaId.value}`)
 }
 
@@ -573,6 +771,8 @@ onUnmounted(() => {
     mediaRecorder.value.stream?.getTracks().forEach((track) => track.stop())
   }
   recognition.value?.stop()
+  digitalHumanRenderer?.destroy()
+  digitalHumanRenderer = null
   window.removeEventListener('resize', syncScreenMode)
   window.removeEventListener('beforeunload', handleBeforeUnload)
   window.removeEventListener('unload', handleBeforeUnload)
@@ -581,231 +781,126 @@ onUnmounted(() => {
 
 <template>
   <div class="page" :class="{ 'page--embedded': embedded }">
+    <Teleport v-if="headerTarget" :to="headerTarget">
+      <div class="chat-titlebar-actions">
+        <el-tag :type="statusType" effect="dark" round>{{ statusText }}</el-tag>
+        <el-button v-if="connectionStatus !== 'connected'" class="chat-titlebar-connect" plain type="success"
+          round :loading="connectionStatus === 'connecting'" @click="handleConnectDigitalHuman">
+          {{ connectionStatus === 'connecting' ? '连接中' : isMobile ? '连接' : '连接数字人' }}
+        </el-button>
+        <el-button v-else class="chat-titlebar-connect" plain type="danger" round @click="stop()">
+          {{ isMobile ? '断开' : '断开连接' }}
+        </el-button>
+        <button type="button" class="chat-titlebar-switch" @click="openAvatarSelector">切换形象</button>
+      </div>
+    </Teleport>
+
     <template v-if="!isMobile">
-      <section class="hero">
-        <div>
-          <span class="kicker">智能客服</span>
-        </div>
-        <div class="chips">
-          <el-tag :type="statusType" effect="dark" round>{{ statusText }}</el-tag>
-          <el-tag type="primary" effect="plain" round>会话类型：{{ chatState.sessionType || 'CONSULTATION' }}</el-tag>
-          <span class="chip">当前形象：{{ selectedAvatar?.name || '--' }}</span>
-          <button type="button" class="chip chip--button" @click="openAvatarSelector">切换形象</button>
-          <span class="chip">后端会话：{{ chatState.sessionCode || chatState.sessionId || '--' }}</span>
-          <span class="chip">数字人：{{ digitalHumanSessionId || '--' }}</span>
-        </div>
-      </section>
-
       <section class="grid">
-      <div class="left">
-        <div class="stage">
-          <transition name="bubble-fade">
-            <div v-if="aiBubbleVisible" class="bubble">
-              <div class="bubble-head"><span>数字人回复</span><span>{{ bubbleStatusText }}</span></div>
-              <p>{{ aiBubbleText || aiBubbleFullText }}</p>
-            </div>
-          </transition>
-          <video id="digital-human-video" autoplay playsinline></video>
-          <audio id="digital-human-audio" autoplay></audio>
-          <div v-if="connectionStatus !== 'connected'" class="placeholder">连接数字人后可同步播报回复，不连接也能正常文字问答。</div>
-        </div>
-
-        <div class="stats">
-          <div class="card"><span>最近提问</span><strong>{{ lastQuestion || '还没有发出问题' }}</strong></div>
-          <div class="card"><span>当前景区</span><strong>{{ scenicAreaLabel }}</strong></div>
-          <div class="card"><span>数字人形象</span><strong>{{ selectedAvatar?.name || '--' }}</strong></div>
-        </div>
-
-        <div class="composer">
-          <el-input v-model="userInput" size="large" clearable :disabled="loading" placeholder="请输入你想咨询的问题..."
-            @keydown.enter.prevent="sendChatMessage()" />
-          <el-button type="primary" size="large" :loading="loading" @click="sendChatMessage()">发送提问</el-button>
-          <button type="button" class="voice" :class="{ recording: isVoiceRecording }"
-            @mousedown="handleVoiceRecordStart" @mouseup="handleVoiceRecordStop" @mouseleave="handleVoiceRecordStop"
-            @touchstart.prevent="handleVoiceRecordStart" @touchend="handleVoiceRecordStop">
-            {{ isVoiceRecording ? '松开发送' : '按住说话' }}
-          </button>
-          <el-button v-if="connectionStatus !== 'connected'" plain type="success"
-            :loading="connectionStatus === 'connecting'" @click="handleConnectDigitalHuman">{{
-              connectionStatus === 'connecting' ? '连接中...' : '连接数字人' }}</el-button>
-          <el-button v-else plain type="danger" @click="stop()">断开连接</el-button>
-        </div>
-      </div>
-
-      <div class="right">
-        <div class="panel">
-          <div class="panel-head">
-            <h2>聊天记录</h2><el-tag type="info" round>{{ messages.length }} 条</el-tag>
-          </div>
-          <div ref="chatArea" class="stream">
-            <el-empty v-if="!messages.length && !loading" description="开始发送第一条消息吧" :image-size="110" />
-            <div v-for="message in messages" :key="message.id" class="message" :class="message.type">
-              <div class="avatar">{{ message.type === 'agent' ? 'AI' : message.type === 'system' ? 'SYS' : '我' }}</div>
-              <div class="msg-body">
-                <div class="role">{{ message.type === 'agent' ? '智能回复' : message.type === 'system' ? '系统提示' :
-                  message.type === 'voice' ? '语音提问' : '我的提问' }}</div>
-                <div v-if="message.type === 'agent'" class="markdown-body" v-html="renderMarkdown(message.content)">
+        <div class="left">
+          <div class="panel">
+            <div ref="chatArea" class="stream">
+              <el-empty v-if="!messages.length && !loading" description="开始发送第一条消息吧" :image-size="110" />
+              <div v-for="message in messages" :key="message.id" class="message" :class="message.type">
+                <div class="avatar">{{ message.type === 'agent' ? 'AI' : message.type === 'system' ? 'SYS' : '我' }}
                 </div>
-                <p v-else>{{ message.content }}</p>
+                <div class="msg-body">
+                  <div class="role">{{ message.type === 'agent' ? '智能回复' : message.type === 'system' ? '系统提示' :
+                    message.type === 'voice' ? '语音提问' : '我的提问' }}</div>
+                  <div v-if="message.type === 'agent'" class="markdown-body" v-html="renderMarkdown(message.content)">
+                  </div>
+                  <p v-else>{{ message.content }}</p>
+                </div>
+              </div>
+              <div v-if="loading" class="message agent">
+                <div class="avatar">AI</div>
+                <div class="msg-body">
+                  <div class="role">智能回复</div>
+                  <p>正在思考...</p>
+                </div>
               </div>
             </div>
-            <div v-if="loading" class="message agent">
-              <div class="avatar">AI</div>
-              <div class="msg-body">
-                <div class="role">智能回复</div>
-                <p>后端处理中...</p>
-              </div>
-            </div>
+          </div>
+
+          <div class="composer">
+            <el-input v-model="userInput" size="large" clearable :disabled="loading" placeholder="请输入你想咨询的问题..."
+              @keydown.enter.prevent="sendChatMessage()" />
+            <el-button type="primary" size="large" :loading="loading" @click="sendChatMessage()">发送提问</el-button>
+            <button type="button" class="voice" :class="{ recording: isVoiceRecording }"
+              @mousedown="handleVoiceRecordStart" @mouseup="handleVoiceRecordStop" @mouseleave="handleVoiceRecordStop"
+              @touchstart.prevent="handleVoiceRecordStart" @touchend="handleVoiceRecordStop">
+              {{ isVoiceRecording ? '松开发送' : '按住说话' }}
+            </button>
           </div>
         </div>
 
-        <div class="panel">
-          <div class="panel-head">
-            <h2>景区确认</h2>
+        <div class="right">
+          <div class="stage">
+            <video id="digital-human-video" ref="digitalHumanVideo" class="digital-human-source"
+              :class="{ 'digital-human-source--fallback': renderFallbackActive }" autoplay playsinline muted></video>
+            <canvas ref="digitalHumanCanvas" class="digital-human-canvas"
+              :class="{ 'digital-human-canvas--hidden': renderFallbackActive }" aria-label="透明背景数字人"></canvas>
+            <audio id="digital-human-audio" autoplay></audio>
+            <div v-if="connectionStatus !== 'connected'" class="desktop-placeholder">数字人未连接，可直接问答</div>
           </div>
-          <div class="state-grid">
-            <div class="card"><span>景区绑定</span><strong>{{ scenicAreaLabel }}</strong></div>
-            <div class="card"><span>已确认</span><strong>{{ chatState.scenicAreaConfirmed === 1 ? '是' : '否' }}</strong>
-            </div>
-            <div class="card"><span>识别置信度</span><strong>{{ scenicConfidenceText }}</strong></div>
-            <div class="card"><span>报告日期</span><strong>{{ chatState.reportDate || '--' }}</strong></div>
-          </div>
-          <div v-if="hasScenicPrompt" class="prompt">
-            <strong>{{ chatState.detectedScenicAreaName ? `你是在咨询“${chatState.detectedScenicAreaName}”吗？` :
-              '系统建议你确认当前咨询景区。' }}</strong>
-            <p>{{ canBindDetectedScenic ? '确认后会调用绑定接口，把当天会话切换为景区服务模式。' : '当前只有景区名称提示，还没有可直接绑定的景区 ID。' }}</p>
-            <div class="actions">
-              <el-button type="primary" :disabled="!canBindDetectedScenic" :loading="bindLoading"
-                @click="handleConfirmScenicArea()">确认就是这个景区</el-button>
-              <el-button plain @click="handleDismissScenicPrompt()">暂不确认</el-button>
-            </div>
-          </div>
-          <el-empty v-else description="当前还没有绑定景区，系统会在需要时提示你确认。" :image-size="92" />
         </div>
-      </div>
       </section>
     </template>
 
     <template v-else>
       <section class="mobile-shell">
-        <nav class="mobile-info-actions" aria-label="问答辅助信息">
-          <button type="button" @click="openMobileInfoDrawer('chat')">
-            <span>聊天记录</span>
-            <strong>{{ messages.length }} 条</strong>
-          </button>
-          <button type="button" @click="openMobileInfoDrawer('scenic')">
-            <span>识别详情</span>
-            <strong>{{ scenicStatusText }}</strong>
-          </button>
-        </nav>
-
-        <section class="mobile-status-card">
-          <div class="mobile-status-card__main">
-            <span>智能客服</span>
-            <strong>{{ selectedAvatar?.name || '默认数字人' }}</strong>
+        <section ref="chatArea" class="stream mobile-chat-panel">
+          <div class="mobile-digital-human-window" :class="{ 'mobile-digital-human-window--active': connectionStatus === 'connected' }"
+            :aria-hidden="connectionStatus !== 'connected'">
+            <video id="digital-human-video" ref="digitalHumanVideo" class="digital-human-source"
+              :class="{ 'digital-human-source--fallback': renderFallbackActive }" autoplay playsinline muted></video>
+            <canvas ref="digitalHumanCanvas" class="digital-human-canvas"
+              :class="{ 'digital-human-canvas--hidden': renderFallbackActive }" aria-label="透明背景数字人"></canvas>
+            <audio id="digital-human-audio" autoplay></audio>
           </div>
-          <button type="button" class="mobile-switch" @click="openAvatarSelector">切换</button>
-          <div class="mobile-status-grid">
-            <div>
-              <span>连接状态</span>
-              <strong>{{ statusText }}</strong>
-            </div>
-            <div>
-              <span>景区状态</span>
-              <strong>{{ scenicStatusText }}</strong>
-            </div>
-            <div>
-              <span>最近提问</span>
-              <strong>{{ lastQuestion || '还没有发出问题' }}</strong>
+
+          <div v-if="connectionStatus !== 'connected'" class="mobile-system-tip">
+            连接数字人后可同步播报回复；不连接也能正常文字问答。
+          </div>
+          <el-empty v-if="!messages.length && !loading" description="开始发送第一条消息吧" :image-size="86" />
+          <div v-for="message in messages" :key="message.id" class="message" :class="message.type">
+            <div class="avatar">{{ message.type === 'agent' ? 'AI' : message.type === 'system' ? 'SYS' : '我' }}</div>
+            <div class="msg-body">
+              <div class="role">{{ message.type === 'agent' ? '智能回复' : message.type === 'system' ? '系统提示' :
+                message.type === 'voice' ? '语音提问' : '我的提问' }}</div>
+              <div v-if="message.type === 'agent'" class="markdown-body" v-html="renderMarkdown(message.content)" />
+              <p v-else>{{ message.content }}</p>
             </div>
           </div>
-        </section>
-
-        <section class="mobile-stage">
-          <transition name="bubble-fade">
-            <div v-if="aiBubbleVisible" class="mobile-bubble">
-              <div class="bubble-head"><span>数字人回复</span><span>{{ bubbleStatusText }}</span></div>
-              <p>{{ aiBubbleText || aiBubbleFullText }}</p>
+          <div v-if="loading" class="message agent">
+            <div class="avatar">AI</div>
+            <div class="msg-body">
+              <div class="role">智能回复</div>
+              <p>正在思考...</p>
             </div>
-          </transition>
-          <video id="digital-human-video" autoplay playsinline></video>
-          <audio id="digital-human-audio" autoplay></audio>
-          <div v-if="connectionStatus !== 'connected'" class="mobile-placeholder">连接数字人后可同步播报回复；不连接也能正常文字问答。</div>
+          </div>
         </section>
 
         <section class="mobile-composer">
-          <div v-if="hasScenicPrompt" class="mobile-scenic-prompt">
-            <div>
-              <strong>{{ chatState.detectedScenicAreaName ? `你是在咨询“${chatState.detectedScenicAreaName}”吗？` : '系统建议你确认当前咨询景区。' }}</strong>
-              <p>{{ canBindDetectedScenic ? '确认后会切换为景区服务模式。' : '当前只有景区名称提示，还没有可直接绑定的景区 ID。' }}</p>
-            </div>
-            <div class="mobile-scenic-prompt__actions">
-              <el-button size="small" type="primary" :disabled="!canBindDetectedScenic" :loading="bindLoading"
-                @click="handleConfirmScenicArea">确认</el-button>
-              <el-button size="small" plain @click="handleDismissScenicPrompt">忽略</el-button>
-            </div>
-          </div>
-
           <el-input v-model="userInput" class="mobile-input" size="large" clearable :disabled="loading"
             placeholder="请输入你想咨询的问题..." @keydown.enter.prevent="sendChatMessage()" />
-          <div class="mobile-actions">
-            <el-button type="primary" :loading="loading" @click="sendChatMessage()">发送</el-button>
-            <button type="button" class="voice mobile-voice" :class="{ recording: isVoiceRecording }"
-              @mousedown="handleVoiceRecordStart" @mouseup="handleVoiceRecordStop" @mouseleave="handleVoiceRecordStop"
-              @touchstart.prevent="handleVoiceRecordStart" @touchend="handleVoiceRecordStop">
-              {{ isVoiceRecording ? '松开' : '按住说话' }}
-            </button>
-            <el-button v-if="connectionStatus !== 'connected'" plain type="success"
-              :loading="connectionStatus === 'connecting'" @click="handleConnectDigitalHuman">
-              {{ connectionStatus === 'connecting' ? '连接中' : '连接数字人' }}
-            </el-button>
-            <el-button v-else plain type="danger" @click="stop()">断开</el-button>
-          </div>
+          <el-button class="mobile-send" type="primary" circle :loading="loading" aria-label="发送"
+            @click="sendChatMessage()">
+            <el-icon v-if="!loading"><Promotion /></el-icon>
+          </el-button>
+          <button type="button" class="voice mobile-voice" :class="{ recording: isVoiceRecording }"
+            :aria-label="isVoiceRecording ? '松开发送' : '按住说话'" :title="isVoiceRecording ? '松开发送' : '按住说话'"
+            @mousedown="handleVoiceRecordStart" @mouseup="handleVoiceRecordStop" @mouseleave="handleVoiceRecordStop"
+            @touchstart.prevent="handleVoiceRecordStart" @touchend="handleVoiceRecordStop">
+            <el-icon><Microphone /></el-icon>
+          </button>
         </section>
 
       </section>
     </template>
 
-    <el-drawer v-model="mobileInfoDrawerVisible" title="问答详情" direction="btt" size="72%" class="mobile-info-drawer">
-      <el-tabs v-model="activeMobileTab" stretch>
-        <el-tab-pane label="聊天记录" name="chat">
-          <div class="mobile-tab-head">
-            <span>聊天记录</span>
-            <el-tag type="info" round>{{ messages.length }} 条</el-tag>
-          </div>
-          <div ref="chatArea" class="stream mobile-stream">
-            <el-empty v-if="!messages.length && !loading" description="开始发送第一条消息吧" :image-size="86" />
-            <div v-for="message in messages" :key="message.id" class="message" :class="message.type">
-              <div class="avatar">{{ message.type === 'agent' ? 'AI' : message.type === 'system' ? 'SYS' : '我' }}</div>
-              <div class="msg-body">
-                <div class="role">{{ message.type === 'agent' ? '智能回复' : message.type === 'system' ? '系统提示' :
-                  message.type === 'voice' ? '语音提问' : '我的提问' }}</div>
-                <div v-if="message.type === 'agent'" class="markdown-body" v-html="renderMarkdown(message.content)" />
-                <p v-else>{{ message.content }}</p>
-              </div>
-            </div>
-            <div v-if="loading" class="message agent">
-              <div class="avatar">AI</div>
-              <div class="msg-body">
-                <div class="role">智能回复</div>
-                <p>后端处理中...</p>
-              </div>
-            </div>
-          </div>
-        </el-tab-pane>
-
-        <el-tab-pane label="识别详情" name="scenic">
-          <div class="mobile-detail-grid">
-            <div><span>景区绑定</span><strong>{{ scenicAreaLabel }}</strong></div>
-            <div><span>是否已确认</span><strong>{{ chatState.scenicAreaConfirmed === 1 ? '是' : '否' }}</strong></div>
-            <div><span>识别置信度</span><strong>{{ scenicConfidenceText }}</strong></div>
-            <div><span>报告日期</span><strong>{{ chatState.reportDate || '--' }}</strong></div>
-          </div>
-        </el-tab-pane>
-      </el-tabs>
-    </el-drawer>
-
-    <el-drawer v-model="avatarDrawerVisible" title="选择数字人形象" direction="btt" size="48%" class="avatar-drawer">
+    <el-dialog v-model="avatarDrawerVisible" title="选择数字人形象" :width="isMobile ? '88vw' : '420px'"
+      class="avatar-dialog" append-to-body>
       <div class="avatar-list">
         <button v-for="avatar in enabledDigitalHumanAvatars" :key="avatar.id" type="button" class="avatar-option"
           :class="{ 'avatar-option--active': avatar.id === selectedAvatarId }" @click="handleAvatarSelect(avatar)">
@@ -817,157 +912,148 @@ onUnmounted(() => {
           <el-tag v-if="avatar.id === selectedAvatarId" type="success" round>当前</el-tag>
         </button>
       </div>
-    </el-drawer>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .page {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   padding: 24px;
-  background: linear-gradient(180deg, #edf4ff, #dfeaf8)
+  overflow: hidden;
+  background: linear-gradient(180deg, #edf4ff, #dfeaf8);
+  box-sizing: border-box
 }
 
 .page--embedded {
-  min-height: auto;
+  height: 100%;
+  min-height: 0;
   padding: 0;
+  overflow: hidden;
   background: transparent
 }
 
-.hero,
 .panel,
-.composer,
-.card {
-  background: rgba(255, 255, 255, .88);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, .08)
+.composer {
+  background: transparent;
+  box-shadow: none
 }
 
-.hero {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 24px;
-  border-radius: 28px
-}
-
-.kicker {
-  display: inline-flex;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(37, 99, 235, .08);
-  color: #2563eb;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase
-}
-
-.hero h1 {
-  margin: 12px 0 8px;
-  font-size: clamp(30px, 4vw, 44px);
-  color: #0f172a
-}
-
-.hero p {
-  margin: 0;
-  max-width: 760px;
-  color: #475569;
-  line-height: 1.8
-}
-
-.chips {
+.chat-titlebar-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
-  justify-content: flex-end;
-  align-content: flex-start
+  justify-content: flex-end
 }
 
-.chip {
+.chat-titlebar-switch {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 38px;
   padding: 0 14px;
   border: 0;
   border-radius: 999px;
   background: #fff;
-  color: #334155;
-  font: inherit
+  color: #1d4ed8;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, .08)
 }
 
-.chip--button {
-  cursor: pointer;
-  color: #1d4ed8;
-  font-weight: 700
+.chat-titlebar-connect {
+  min-height: 38px;
+  margin: 0;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, .08)
 }
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(340px, .95fr);
-  gap: 20px;
-  margin-top: 20px
+  grid-template-columns: minmax(0, 1fr) clamp(230px, 18vw, 280px);
+  gap: 0;
+  height: calc(100vh - 48px);
+  min-height: 0;
+  margin-top: 0;
+  align-items: stretch;
+  overflow: hidden;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, .08)
+}
+
+.page--embedded .grid {
+  height: 100%
 }
 
 .left,
 .right {
   display: flex;
   flex-direction: column;
-  gap: 20px
+  gap: 0
+}
+
+.left {
+  min-height: 0;
+  padding: 24px 20px 20px;
+  overflow: hidden
+}
+
+.right {
+  /* 左右内容属于同一个问答工作区，仅用细线区分数字人展示区域。 */
+  align-items: center;
+  padding: 18px 12px 20px;
+  border-left: 1px solid #e5e7eb;
+  overflow: hidden
 }
 
 .stage {
   position: relative;
-  min-height: 62vh;
-  border-radius: 32px;
+  width: 100%;
+  max-width: 230px;
+  height: 360px;
+  flex: 0 0 360px;
+  border-radius: 0;
   overflow: hidden;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  background: linear-gradient(180deg, #06111f, #101d2e);
-  box-shadow: 0 28px 60px rgba(15, 23, 42, .22)
+  background: transparent;
+  box-shadow: none
 }
 
-#digital-human-video {
-  width: min(760px, 78vw);
-  max-height: 88%;
+.digital-human-source {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none
+}
+
+.digital-human-source--fallback {
+  position: static;
+  width: 190px;
+  height: auto;
+  aspect-ratio: 9 / 16;
+  opacity: 1;
   object-fit: contain
 }
 
-.placeholder {
-  position: absolute;
-  inset: auto 24px 24px;
-  z-index: 2;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(8, 15, 28, .54);
-  color: #fff;
-  line-height: 1.7
+.digital-human-canvas {
+  width: 190px;
+  height: auto;
+  aspect-ratio: 9 / 16;
+  object-fit: contain
 }
 
-.bubble {
-  position: absolute;
-  top: 24px;
-  left: 24px;
-  z-index: 3;
-  width: min(420px, calc(100% - 48px));
-  padding: 18px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, .96);
-  box-shadow: 0 20px 44px rgba(15, 23, 42, .18)
+.digital-human-canvas--hidden {
+  display: none
 }
 
-.bubble-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-  color: #1d4ed8;
-  font-size: 13px;
-  font-weight: 700
-}
-
-.bubble p,
-.msg-body p,
-.summary-block p {
+.msg-body p {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1040,42 +1126,16 @@ onUnmounted(() => {
   font-size: .92em
 }
 
-.stats,
-.state-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px
-}
-
-.card {
-  padding: 16px 18px;
-  border-radius: 22px
-}
-
-.card span,
-.summary-block span,
-.summary-box span {
-  display: block;
-  color: #64748b;
-  font-size: 13px
-}
-
-.card strong,
-.summary-box strong {
-  display: block;
-  margin-top: 8px;
-  color: #0f172a;
-  font-size: 16px;
-  line-height: 1.6;
-  word-break: break-word
-}
-
 .composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
-  padding: 18px;
-  border-radius: 28px
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding: 18px 0 0;
+  border-top: 1px solid #eef2f7;
+  border-radius: 0;
+  z-index: 6
 }
 
 .composer :deep(.el-input__wrapper) {
@@ -1104,30 +1164,20 @@ onUnmounted(() => {
 }
 
 .panel {
-  padding: 18px;
-  border-radius: 28px
-}
-
-.panel-head {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px
-}
-
-.panel-head h2 {
-  margin: 0;
-  font-size: 22px;
-  color: #10233e
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 0 18px;
+  border-radius: 0
 }
 
 .stream {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-height: 300px;
-  max-height: 420px;
+  min-height: 0;
   overflow-y: auto
 }
 
@@ -1194,359 +1244,144 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, .78)
 }
 
-.prompt {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: 22px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, .08), rgba(15, 118, 110, .08))
-}
-
-.prompt p {
-  margin: 8px 0 0;
-  color: #475569;
-  line-height: 1.7
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 14px
-}
-
-.summary,
-.summary-box {
-  padding: 16px;
-  border-radius: 22px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, .08), rgba(59, 130, 246, .08))
-}
-
-.summary-box {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px
-}
-
-.summary-block {
-  margin-top: 16px
-}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 10px
-}
-
-.tags em {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(37, 99, 235, .08);
-  color: #1d4ed8;
-  font-style: normal
-}
-
-.bubble-fade-enter-active,
-.bubble-fade-leave-active {
-  transition: opacity .28s ease, transform .28s ease
-}
-
-.bubble-fade-enter-from,
-.bubble-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-12px) scale(.96)
+.desktop-placeholder {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, .68);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.5
 }
 
 .mobile-shell {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-bottom: 28px;
-  overflow: visible
+  height: calc(100vh - 56px);
+  min-height: 0;
+  padding-bottom: 104px;
+  overflow: hidden
 }
 
-.mobile-info-actions {
-  position: sticky;
-  top: 0;
-  z-index: 8;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 2px 0 4px;
-  background: linear-gradient(180deg, rgba(237, 244, 255, .96), rgba(237, 244, 255, .72))
-}
-
-.page--embedded .mobile-info-actions {
-  background: linear-gradient(180deg, rgba(255, 255, 255, .96), rgba(255, 255, 255, .7))
-}
-
-.mobile-info-actions button {
-  min-width: 0;
-  min-height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid rgba(148, 163, 184, .24);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .94);
-  color: #0f172a;
-  font: inherit;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, .07);
-  cursor: pointer
-}
-
-.mobile-info-actions span {
-  color: #2563eb;
-  font-size: 14px;
-  font-weight: 800
-}
-
-.mobile-info-actions strong {
-  min-width: 0;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
-  text-align: right;
-  word-break: keep-all
-}
-
-.mobile-status-card,
-.mobile-composer,
-.mobile-info-panel {
+.mobile-composer {
   border-radius: 18px;
   background: rgba(255, 255, 255, .92);
   box-shadow: 0 12px 28px rgba(15, 23, 42, .08)
 }
 
-.mobile-status-card {
-  position: relative;
-  padding: 14px
-}
-
-.mobile-status-card__main span,
-.mobile-status-grid span,
-.mobile-detail-grid span {
-  display: block;
-  color: #64748b;
-  font-size: 12px
-}
-
-.mobile-status-card__main strong {
-  display: block;
-  margin-top: 4px;
-  color: #0f172a;
-  font-size: 18px;
-  line-height: 1.35
-}
-
-.mobile-switch {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(37, 99, 235, .1);
-  color: #1d4ed8;
-  font-weight: 700;
-  cursor: pointer
-}
-
-.mobile-status-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 12px
-}
-
-.mobile-status-grid div,
-.mobile-detail-grid div {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 14px;
-  background: #f8fafc
-}
-
-.mobile-status-grid strong,
-.mobile-detail-grid strong {
-  display: block;
-  margin-top: 5px;
-  color: #0f172a;
-  font-size: 13px;
-  line-height: 1.35;
-  word-break: break-word
-}
-
-.mobile-stage {
-  position: relative;
-  min-height: clamp(220px, 44vh, 360px);
-  border-radius: 22px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, #07111f, #142033);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, .18)
-}
-
-.mobile-stage #digital-human-video {
-  width: 100%;
-  max-height: 100%;
-  object-fit: contain
-}
-
-.mobile-placeholder {
-  position: absolute;
-  inset: auto 12px 12px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(8, 15, 28, .58);
-  color: #fff;
-  font-size: 13px;
-  line-height: 1.55
-}
-
-.mobile-bubble {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
-  z-index: 3;
-  padding: 12px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .96);
-  box-shadow: 0 14px 32px rgba(15, 23, 42, .18)
-}
-
-.mobile-bubble p {
-  margin: 0;
-  max-height: 96px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.7
-}
-
-.mobile-composer {
-  padding: 12px
-}
-
-.mobile-scenic-prompt {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 10px;
-  padding: 10px;
-  border-radius: 14px;
-  background: rgba(37, 99, 235, .08)
-}
-
-.mobile-scenic-prompt strong {
-  color: #0f172a;
-  font-size: 14px
-}
-
-.mobile-scenic-prompt p {
-  margin: 4px 0 0;
-  color: #475569;
-  font-size: 12px;
-  line-height: 1.5
-}
-
-.mobile-scenic-prompt__actions,
-.mobile-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap
-}
-
-.mobile-input :deep(.el-input__wrapper) {
-  min-height: 48px;
-  border-radius: 14px
-}
-
-.mobile-actions {
-  margin-top: 10px
-}
-
-.mobile-actions :deep(.el-button),
-.mobile-voice {
-  flex: 1 1 96px;
-  min-width: 0;
-  min-height: 44px;
-  border-radius: 14px
-}
-
-.mobile-voice {
-  min-width: 0
-}
-
-.mobile-info-panel {
-  flex: 0 0 auto;
-  padding: 8px 12px 16px;
-  overflow: visible
-}
-
-.mobile-info-panel :deep(.el-tabs__content),
-.mobile-info-panel :deep(.el-tab-pane) {
-  overflow: visible
-}
-
-.mobile-tab-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-  color: #0f172a;
-  font-weight: 800
-}
-
-.mobile-stream {
-  min-height: 160px;
-  max-height: none;
-  overflow: visible
-}
-
-.mobile-info-drawer :deep(.el-drawer__body) {
-  padding: 8px 16px 18px;
-  overflow: hidden
-}
-
-.mobile-info-drawer .mobile-stream {
-  max-height: calc(72vh - 142px);
-  overflow-y: auto;
-  padding-right: 4px
-}
-
-.mobile-info-drawer .mobile-detail-grid {
-  max-height: calc(72vh - 116px);
+.mobile-chat-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 12px;
+  padding: 4px 2px 10px;
   overflow-y: auto
 }
 
-.mobile-stream .avatar {
+.mobile-digital-human-window {
+  position: fixed;
+  top: 66px;
+  right: 18px;
+  z-index: 18;
+  width: 86px;
+  height: 136px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .7);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, .16);
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease
+}
+
+.mobile-digital-human-window--active {
+  opacity: 1;
+  transform: translateY(0)
+}
+
+.mobile-digital-human-window .digital-human-canvas,
+.mobile-digital-human-window .digital-human-source--fallback {
+  width: 86px;
+  height: 136px;
+  object-fit: contain
+}
+
+.mobile-system-tip {
+  align-self: flex-start;
+  max-width: min(86%, 330px);
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, .58);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.55;
+  word-break: break-word
+}
+
+.mobile-chat-panel .avatar {
   width: 36px;
   height: 36px;
   flex-basis: 36px;
   border-radius: 12px
 }
 
-.mobile-stream .msg-body {
+.mobile-chat-panel .msg-body {
   max-width: min(82%, 320px);
   padding: 11px 12px;
   border-radius: 16px
 }
 
-.mobile-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding-top: 6px
+.mobile-composer {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 22px
+}
+
+.mobile-input :deep(.el-input__wrapper) {
+  min-height: 44px;
+  border-radius: 999px
+}
+
+.mobile-input {
+  min-width: 0;
+  flex: 1
+}
+
+.mobile-send,
+.mobile-voice {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  flex: 0 0 42px;
+  padding: 0;
+  border-radius: 50%
+}
+
+.mobile-voice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center
+}
+
+.mobile-send :deep(.el-icon),
+.mobile-voice .el-icon {
+  font-size: 19px
 }
 
 .avatar-list {
@@ -1554,14 +1389,33 @@ onUnmounted(() => {
   gap: 10px
 }
 
+.avatar-dialog :deep(.el-dialog) {
+  border-radius: 18px
+}
+
+.avatar-dialog :deep(.el-dialog__header) {
+  padding: 18px 20px 8px;
+  margin-right: 0
+}
+
+.avatar-dialog :deep(.el-dialog__title) {
+  color: #0f172a;
+  font-size: 17px;
+  font-weight: 800
+}
+
+.avatar-dialog :deep(.el-dialog__body) {
+  padding: 10px 20px 20px
+}
+
 .avatar-option {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 10px;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
+  border-radius: 12px;
   background: #fff;
   color: inherit;
   text-align: left;
@@ -1574,13 +1428,13 @@ onUnmounted(() => {
 }
 
 .avatar-option__preview {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: 12px;
   background: linear-gradient(135deg, #dbeafe, #ccfbf1);
   color: #1d4ed8;
   font-weight: 800
@@ -1605,34 +1459,58 @@ onUnmounted(() => {
 
 @media (max-width:1180px) {
   .grid {
-    grid-template-columns: 1fr
+    grid-template-columns: minmax(0, 1fr) 240px
   }
 
   .stage {
-    min-height: 52vh
+    height: 340px;
+    flex-basis: 340px
+  }
+
+  .stream {
+    min-height: 0
   }
 }
 
 @media (max-width:900px) {
+  .chat-titlebar-actions {
+    flex: 1;
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-width: 0
+  }
+
+  .chat-titlebar-actions :deep(.el-tag) {
+    flex: 0 0 auto
+  }
+
+  .chat-titlebar-connect {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+    box-shadow: none
+  }
+
+  .chat-titlebar-switch {
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    box-shadow: none
+  }
+
   .page {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
     padding: 16px
   }
 
   .page--embedded {
+    height: auto;
+    min-height: auto;
+    overflow: visible;
     padding: 0
-  }
-
-  .hero {
-    flex-direction: column
-  }
-
-  .chips {
-    justify-content: flex-start
-  }
-
-  .stats,
-  .state-grid {
-    grid-template-columns: 1fr
   }
 
   .composer {
@@ -1642,23 +1520,6 @@ onUnmounted(() => {
   .voice,
   .composer :deep(.el-button) {
     width: 100%
-  }
-}
-
-@media (max-width:640px) {
-  .hero h1 {
-    font-size: 28px
-  }
-
-  .bubble {
-    top: 16px;
-    left: 16px;
-    width: min(360px, calc(100% - 32px))
-  }
-
-  .summary-box {
-    flex-direction: column;
-    align-items: flex-start
   }
 }
 </style>

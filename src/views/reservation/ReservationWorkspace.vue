@@ -1072,7 +1072,7 @@ onMounted(async () => {
             <el-table-column label="最少提前" min-width="110">
               <template #default="{ row }">{{ row.minAdvanceMinutes ?? '-' }} 分钟</template>
             </el-table-column>
-            <el-table-column label="操作" width="110" fixed="right">
+            <el-table-column label="操作" width="76" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" :disabled="!isRealNameVerified"
                   @click="openReserveForm(row)">预约</el-button>
@@ -1187,7 +1187,7 @@ onMounted(async () => {
                 <el-tag :type="statusTagType(row.status)" effect="plain">{{ formatStatusText(row.status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="170" fixed="right">
+            <el-table-column label="操作" width="116" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" :disabled="!canEnterOrder(row)"
                   :loading="enteringReservationNo === row.reservationNo" @click="enterOrder(row)">
@@ -1236,7 +1236,7 @@ onMounted(async () => {
                 }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="160" fixed="right">
+            <el-table-column label="操作" width="112" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="editRule(row)">编辑</el-button>
                 <el-button link :type="Number(row.status) === 1 ? 'warning' : 'success'" @click="toggleRuleStatus(row)">
@@ -1340,7 +1340,7 @@ onMounted(async () => {
                 }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="100" fixed="right">
+            <el-table-column label="操作" width="76" fixed="right">
               <template #default="{ row }"><el-button link type="primary"
                   @click="editSlot(row)">编辑</el-button></template>
             </el-table-column>
