@@ -4,6 +4,7 @@ import {
   InformationCircleOutline,
   LocateOutline,
   RefreshOutline,
+  SparklesOutline,
 } from '@vicons/ionicons5'
 
 defineProps({
@@ -19,15 +20,33 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  digitalHumanOpen: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-const emit = defineEmits(['locate', 'refresh', 'toggle-info', 'toggle-routes'])
+const emit = defineEmits(['locate', 'refresh', 'toggle-info', 'toggle-routes', 'toggle-digital-human'])
 </script>
 
 <template>
   <!-- 重点：景区信息和推荐路线都做成地图工具式 icon 小组件，避免占用顶部标题栏。 -->
   <div class="user-map-controls pointer-events-auto">
     <div class="user-map-controls__stack" aria-label="导游信息">
+      <n-tooltip placement="left">
+        <template #trigger>
+          <n-button
+            quaternary
+            circle
+            class="user-map-controls__button"
+            :class="{ 'user-map-controls__button--active': digitalHumanOpen }"
+            @click="emit('toggle-digital-human')"
+          >
+            <template #icon><n-icon><SparklesOutline /></n-icon></template>
+          </n-button>
+        </template>
+        AI 数字人
+      </n-tooltip>
       <n-tooltip placement="left">
         <template #trigger>
           <n-button

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ChevronDownOutline,
@@ -9,11 +9,18 @@ import {
   LeafOutline,
   LocationOutline,
   MapOutline,
+  MicOutline,
   SparklesOutline,
   TimeOutline,
   TrailSignOutline,
 } from '@vicons/ionicons5'
 import { getLatestAgentRouteGeoApi, getMapInitApi, pageScenicAreasApi } from '@/api/map'
+import {
+  agentChatApi,
+  fetchDigitalHuman,
+  fetchInterruptTalk,
+  sendWebRTCOffer,
+} from '@/api/chat'
 import { useScenicWarmReminder } from '@/composables/useScenicWarmReminder'
 import { pinia, useUserStore } from '@/stores'
 import { message } from '@/utils/feedback'
@@ -32,6 +39,11 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore(pinia)
 const SCENIC_NAME_CACHE_KEY = 'wanlv:scenic-area-name-cache'
+const STUN_SERVER = 'stun:stun.l.google.com:19302'
+const DIGITAL_HUMAN_API_URL =
+  import.meta.env.VITE_DIGITAL_HUMAN_GUIDE_API_URL ||
+  import.meta.env.VITE_DIGITAL_HUMAN_API_URL ||
+  'http://localhost:8011'
 
 const scenicOptions = ref([])
 const selectedScenicId = ref(null)
@@ -45,6 +57,22 @@ const isRoutePanelOpen = ref(false)
 const visibleRouteIds = ref([])
 const mapCanvasRef = ref(null)
 const agentRoute = ref(null)
+const isDigitalHumanOpen = ref(false)
+const digitalHumanVideoRef = ref(null)
+const digitalHumanCanvasRef = ref(null)
+const digitalHumanAudioRef = ref(null)
+const digitalHumanPc = ref(null)
+const digitalHumanSessionId = ref(0)
+const digitalHumanStatus = ref('disconnected')
+const digitalHumanInput = ref('')
+const digitalHumanLoading = ref(false)
+const digitalHumanReply = ref('')
+const digitalHumanRenderFallback = ref(false)
+const isDigitalHumanVoiceRecording = ref(false)
+const digitalHumanMediaRecorder = ref(null)
+const digitalHumanRecognition = ref(null)
+
+let digitalHumanRenderer = null
 
 const scenicArea = computed(() => mapData.value?.scenicArea || null)
 const spots = computed(() => mapData.value?.spots || [])
@@ -59,6 +87,15 @@ const displayMapData = computed(() =>
     }
     : mapData.value,
 )
+const currentUserId = computed(() => {
+  const userId = Number(userStore.userId)
+  return Number.isFinite(userId) && userId > 0 ? userId : null
+})
+const digitalHumanStatusText = computed(() => ({
+  connected: '已连接',
+  connecting: '连接中',
+  disconnected: '未连接',
+}[digitalHumanStatus.value] || '未连接'))
 
 const enabledScenicOptions = computed(() =>
   scenicOptions.value.filter((item) => Number(item.status) === 1 || Number(item.id) === Number(selectedScenicId.value)),
@@ -286,6 +323,435 @@ function getRouteTags(route) {
   return tags.filter(Boolean).slice(0, 3)
 }
 
+class DigitalHumanRenderer {
+  constructor(canvas) {
+    this.canvas = canvas
+    this.video = null
+    this.gl = null
+    this.program = null
+    this.texture = null
+    this.positionBuffer = null
+    this.texCoordBuffer = null
+    this.frameId = null
+    this.running = false
+    this.locations = null
+  }
+
+  start(video) {
+    this.stop()
+    this.video = video
+    if (!this.canvas || !this.video || !this.initWebGL()) return false
+    this.resize()
+    this.running = true
+    this.frameId = window.requestAnimationFrame(() => this.render())
+    return true
+  }
+
+  stop() {
+    if (this.frameId) window.cancelAnimationFrame(this.frameId)
+    this.frameId = null
+    this.running = false
+    this.clear()
+  }
+
+  resize() {
+    if (!this.canvas || !this.gl) return
+    const width = 270
+    const height = 480
+    if (this.canvas.width !== width) this.canvas.width = width
+    if (this.canvas.height !== height) this.canvas.height = height
+    this.gl.viewport(0, 0, width, height)
+  }
+
+  destroy() {
+    this.stop()
+    if (this.gl) {
+      if (this.texture) this.gl.deleteTexture(this.texture)
+      if (this.positionBuffer) this.gl.deleteBuffer(this.positionBuffer)
+      if (this.texCoordBuffer) this.gl.deleteBuffer(this.texCoordBuffer)
+      if (this.program) this.gl.deleteProgram(this.program)
+    }
+    this.video = null
+    this.gl = null
+    this.program = null
+    this.texture = null
+    this.positionBuffer = null
+    this.texCoordBuffer = null
+    this.locations = null
+  }
+
+  initWebGL() {
+    if (this.gl && this.program) return true
+    const gl = this.canvas.getContext('webgl', {
+      alpha: true,
+      antialias: true,
+      premultipliedAlpha: false,
+    })
+    if (!gl) return false
+
+    const vertexShader = this.createShader(gl, gl.VERTEX_SHADER, `
+      attribute vec2 a_position;
+      attribute vec2 a_texCoord;
+      varying vec2 v_texCoord;
+      void main() {
+        gl_Position = vec4(a_position, 0.0, 1.0);
+        v_texCoord = a_texCoord;
+      }
+    `)
+    const fragmentShader = this.createShader(gl, gl.FRAGMENT_SHADER, `
+      precision mediump float;
+      uniform sampler2D u_video;
+      varying vec2 v_texCoord;
+      void main() {
+        vec4 color = texture2D(u_video, v_texCoord);
+        float maxRedBlue = max(color.r, color.b);
+        float greenScore = color.g - maxRedBlue;
+        float greenDominant = step(0.35, color.g) * step(0.11, greenScore) *
+          step(color.r * 1.18, color.g) * step(color.b * 1.18, color.g);
+        float matte = smoothstep(0.11, 0.34, greenScore) * greenDominant;
+        if (matte > 0.96) discard;
+        float alpha = 1.0 - matte;
+        color.g = mix(min(color.g, maxRedBlue * 0.92), color.g, step(0.98, alpha));
+        gl_FragColor = vec4(color.rgb, alpha);
+      }
+    `)
+    const program = this.createProgram(gl, vertexShader, fragmentShader)
+    if (!program) return false
+
+    this.gl = gl
+    this.program = program
+    this.locations = {
+      position: gl.getAttribLocation(program, 'a_position'),
+      texCoord: gl.getAttribLocation(program, 'a_texCoord'),
+      video: gl.getUniformLocation(program, 'u_video'),
+    }
+    this.positionBuffer = this.createBuffer(gl, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]))
+    this.texCoordBuffer = this.createBuffer(gl, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]))
+    this.texture = gl.createTexture()
+    gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    gl.clearColor(0, 0, 0, 0)
+    return true
+  }
+
+  createShader(gl, type, source) {
+    const shader = gl.createShader(type)
+    if (!shader) return null
+    gl.shaderSource(shader, source)
+    gl.compileShader(shader)
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      gl.deleteShader(shader)
+      return null
+    }
+    return shader
+  }
+
+  createProgram(gl, vertexShader, fragmentShader) {
+    if (!vertexShader || !fragmentShader) return null
+    const program = gl.createProgram()
+    if (!program) return null
+    gl.attachShader(program, vertexShader)
+    gl.attachShader(program, fragmentShader)
+    gl.linkProgram(program)
+    gl.deleteShader(vertexShader)
+    gl.deleteShader(fragmentShader)
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.deleteProgram(program)
+      return null
+    }
+    return program
+  }
+
+  createBuffer(gl, data) {
+    const buffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
+    return buffer
+  }
+
+  clear() {
+    if (!this.gl || !this.canvas) return
+    this.gl.viewport(0, 0, this.canvas.width || 1, this.canvas.height || 1)
+    this.gl.clear(this.gl.COLOR_BUFFER_BIT)
+  }
+
+  render() {
+    if (!this.running || !this.gl || !this.video) return
+    if (this.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && this.video.videoWidth && this.video.videoHeight) {
+      const gl = this.gl
+      this.resize()
+      gl.clear(gl.COLOR_BUFFER_BIT)
+      gl.useProgram(this.program)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, this.texture)
+      // 重点：视频帧作为 WebGL 纹理时翻转 Y 轴，再用 shader 去除绿幕背景。
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.video)
+      gl.uniform1i(this.locations.video, 0)
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer)
+      gl.enableVertexAttribArray(this.locations.position)
+      gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0)
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer)
+      gl.enableVertexAttribArray(this.locations.texCoord)
+      gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0)
+      gl.drawArrays(gl.TRIANGLES, 0, 6)
+    }
+    this.frameId = window.requestAnimationFrame(() => this.render())
+  }
+}
+
+function getDigitalHumanRenderer() {
+  if (!digitalHumanCanvasRef.value) return null
+  if (!digitalHumanRenderer || digitalHumanRenderer.canvas !== digitalHumanCanvasRef.value) {
+    digitalHumanRenderer?.destroy()
+    digitalHumanRenderer = new DigitalHumanRenderer(digitalHumanCanvasRef.value)
+  }
+  return digitalHumanRenderer
+}
+
+async function startDigitalHumanRender() {
+  const video = digitalHumanVideoRef.value
+  const renderer = getDigitalHumanRenderer()
+  if (!video || !renderer) return
+  digitalHumanRenderer?.stop()
+  await nextTick()
+  try {
+    await video.play()
+  } catch (error) {
+    console.warn('Digital human video autoplay failed:', error)
+  }
+  digitalHumanRenderFallback.value = !renderer.start(video)
+}
+
+function stopDigitalHumanRender() {
+  digitalHumanRenderer?.stop()
+  digitalHumanRenderFallback.value = false
+}
+
+function clearDigitalHumanMedia() {
+  stopDigitalHumanRender()
+  if (digitalHumanVideoRef.value) {
+    digitalHumanVideoRef.value.onloadedmetadata = null
+    digitalHumanVideoRef.value.onplaying = null
+    digitalHumanVideoRef.value.srcObject = null
+  }
+  if (digitalHumanAudioRef.value) {
+    digitalHumanAudioRef.value.srcObject = null
+  }
+}
+
+function cleanupDigitalHumanConnection() {
+  clearDigitalHumanMedia()
+  digitalHumanPc.value?.close()
+  digitalHumanPc.value = null
+  digitalHumanSessionId.value = 0
+  digitalHumanStatus.value = 'disconnected'
+}
+
+async function negotiateDigitalHuman() {
+  digitalHumanPc.value.addTransceiver('video', { direction: 'recvonly' })
+  digitalHumanPc.value.addTransceiver('audio', { direction: 'recvonly' })
+  const offer = await digitalHumanPc.value.createOffer()
+  await digitalHumanPc.value.setLocalDescription(offer)
+  await new Promise((resolve) => {
+    if (digitalHumanPc.value.iceGatheringState === 'complete') {
+      resolve()
+      return
+    }
+
+    const handler = () => {
+      if (digitalHumanPc.value?.iceGatheringState === 'complete') {
+        digitalHumanPc.value.removeEventListener('icegatheringstatechange', handler)
+        resolve()
+      }
+    }
+    digitalHumanPc.value.addEventListener('icegatheringstatechange', handler)
+  })
+
+  const response = await sendWebRTCOffer(
+    { sdp: digitalHumanPc.value.localDescription.sdp, type: digitalHumanPc.value.localDescription.type },
+    DIGITAL_HUMAN_API_URL,
+  )
+  digitalHumanSessionId.value = response.data.sessionid
+  await digitalHumanPc.value.setRemoteDescription(response.data)
+}
+
+async function startDigitalHuman() {
+  if (digitalHumanStatus.value === 'connecting' || digitalHumanStatus.value === 'connected') return
+
+  digitalHumanStatus.value = 'connecting'
+  try {
+    digitalHumanPc.value = new RTCPeerConnection({
+      sdpSemantics: 'unified-plan',
+      iceServers: [{ urls: [STUN_SERVER] }],
+    })
+    digitalHumanPc.value.addEventListener('track', (event) => {
+      if (event.track.kind === 'video' && digitalHumanVideoRef.value) {
+        digitalHumanVideoRef.value.srcObject = event.streams[0]
+        digitalHumanVideoRef.value.onloadedmetadata = startDigitalHumanRender
+        digitalHumanVideoRef.value.onplaying = startDigitalHumanRender
+        startDigitalHumanRender()
+        return
+      }
+      if (event.track.kind === 'audio' && digitalHumanAudioRef.value) {
+        digitalHumanAudioRef.value.srcObject = event.streams[0]
+      }
+    })
+    digitalHumanPc.value.addEventListener('connectionstatechange', () => {
+      const state = digitalHumanPc.value?.connectionState
+      if (state === 'connected') {
+        digitalHumanStatus.value = 'connected'
+        return
+      }
+      if (['disconnected', 'failed', 'closed'].includes(state)) {
+        clearDigitalHumanMedia()
+        digitalHumanStatus.value = 'disconnected'
+      }
+    })
+    await negotiateDigitalHuman()
+  } catch (error) {
+    console.error('Failed to connect digital human:', error)
+    cleanupDigitalHumanConnection()
+    message.error(`数字人连接失败：${error.message || '请稍后再试'}`)
+  }
+}
+
+async function stopDigitalHuman() {
+  try {
+    if (digitalHumanSessionId.value) {
+      await fetchInterruptTalk({ sessionid: digitalHumanSessionId.value }, DIGITAL_HUMAN_API_URL)
+    }
+  } catch (error) {
+    console.error('Failed to interrupt digital human:', error)
+  } finally {
+    cleanupDigitalHumanConnection()
+  }
+}
+
+async function toggleDigitalHuman() {
+  isDigitalHumanOpen.value = !isDigitalHumanOpen.value
+  if (isDigitalHumanOpen.value) {
+    await nextTick()
+    startDigitalHuman()
+    return
+  }
+  digitalHumanReply.value = ''
+  await stopDigitalHuman()
+}
+
+function cleanDigitalHumanSpeechText(text = '') {
+  return String(text)
+    // 重点：数字人播报前去掉表情和 Markdown 标记，避免语音读出符号。
+    .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D]/gu, '')
+    .replace(/\*\*|\*|#|\[|\]|\(|\)/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
+async function playDigitalHumanReply(replyText) {
+  const text = cleanDigitalHumanSpeechText(replyText)
+  if (!text || digitalHumanStatus.value !== 'connected' || !digitalHumanSessionId.value) return
+
+  try {
+    const response = await fetchDigitalHuman(
+      { type: 'echo', text, sessionid: digitalHumanSessionId.value },
+      DIGITAL_HUMAN_API_URL,
+    )
+    if (response.data?.code !== 0) throw new Error(response.data?.msg || '数字人播报失败')
+  } catch (error) {
+    console.error('Failed to play digital human reply:', error)
+    message.warning(error.message || '数字人播报失败')
+  }
+}
+
+async function sendDigitalHumanQuestion() {
+  const content = digitalHumanInput.value.trim()
+  if (!content || digitalHumanLoading.value) return
+  if (!currentUserId.value) {
+    message.error('当前登录用户不存在，无法发起问答')
+    return
+  }
+
+  digitalHumanLoading.value = true
+  digitalHumanInput.value = ''
+  digitalHumanReply.value = ''
+  try {
+    if (digitalHumanSessionId.value) {
+      await fetchInterruptTalk({ sessionid: digitalHumanSessionId.value }, DIGITAL_HUMAN_API_URL)
+    }
+    const result = await agentChatApi({
+      userId: currentUserId.value,
+      content,
+      messageType: 'text',
+      scenicAreaId: selectedScenicId.value,
+      scenicAreaSource: selectedScenicId.value ? 'FRONTEND' : null,
+      sourceType: selectedScenicId.value ? 'SCENIC_DETAIL' : 'GLOBAL_CHAT',
+      sourceId: selectedScenicId.value ? String(selectedScenicId.value) : null,
+    })
+    const reply = result?.answer || '暂时没有获取到回复。'
+    digitalHumanReply.value = reply
+    await playDigitalHumanReply(reply)
+  } catch (error) {
+    console.error('Failed to send digital human question:', error)
+    message.error('这次提问没有成功送达后端，请稍后重试')
+  } finally {
+    digitalHumanLoading.value = false
+  }
+}
+
+async function handleDigitalHumanVoiceStart() {
+  if (isDigitalHumanVoiceRecording.value || digitalHumanLoading.value) return
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    digitalHumanMediaRecorder.value = new MediaRecorder(stream)
+    digitalHumanMediaRecorder.value.ondataavailable = () => { }
+    digitalHumanMediaRecorder.value.start()
+    isDigitalHumanVoiceRecording.value = true
+    digitalHumanRecognition.value?.start()
+  } catch (error) {
+    console.error('Failed to access microphone:', error)
+    message.error('无法访问麦克风，请检查浏览器权限设置')
+  }
+}
+
+function handleDigitalHumanVoiceStop() {
+  if (!isDigitalHumanVoiceRecording.value || !digitalHumanMediaRecorder.value) return
+
+  digitalHumanMediaRecorder.value.stop()
+  isDigitalHumanVoiceRecording.value = false
+  digitalHumanMediaRecorder.value.stream?.getTracks().forEach((track) => track.stop())
+  digitalHumanRecognition.value?.stop()
+  window.setTimeout(() => {
+    if (digitalHumanInput.value.trim()) {
+      sendDigitalHumanQuestion()
+    }
+  }, 500)
+}
+
+function initDigitalHumanSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+  if (!SpeechRecognition) return
+
+  digitalHumanRecognition.value = new SpeechRecognition()
+  digitalHumanRecognition.value.continuous = true
+  digitalHumanRecognition.value.interimResults = true
+  digitalHumanRecognition.value.lang = 'zh-CN'
+  digitalHumanRecognition.value.onresult = (event) => {
+    let transcript = ''
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      transcript += event.results[index][0].transcript
+    }
+    // 重点：语音识别结果直接进入底部输入框，复用同一套数字人问答发送逻辑。
+    digitalHumanInput.value = transcript.trim()
+  }
+}
+
 watch(selectedScenicId, (value) => {
   if (value) fetchMapData()
 })
@@ -300,7 +766,21 @@ watch(
   },
 )
 
-onMounted(fetchScenicOptions)
+onMounted(() => {
+  fetchScenicOptions()
+  initDigitalHumanSpeechRecognition()
+})
+
+onUnmounted(() => {
+  cleanupDigitalHumanConnection()
+  if (isDigitalHumanVoiceRecording.value && digitalHumanMediaRecorder.value) {
+    digitalHumanMediaRecorder.value.stop()
+    digitalHumanMediaRecorder.value.stream?.getTracks().forEach((track) => track.stop())
+  }
+  digitalHumanRecognition.value?.stop()
+  digitalHumanRenderer?.destroy()
+  digitalHumanRenderer = null
+})
 </script>
 
 <template>
@@ -342,9 +822,51 @@ onMounted(fetchScenicOptions)
 
     <aside class="pointer-events-none absolute right-1 top-4 z-[6]">
       <UserMapControls :loading="isLoadingMap" :info-open="isScenicInfoOpen" :route-open="isRoutePanelOpen"
-        @locate="mapCanvasRef?.locate()" @refresh="fetchMapData" @toggle-info="isScenicInfoOpen = !isScenicInfoOpen"
-        @toggle-routes="isRoutePanelOpen = !isRoutePanelOpen" />
+        :digital-human-open="isDigitalHumanOpen" @locate="mapCanvasRef?.locate()" @refresh="fetchMapData"
+        @toggle-info="isScenicInfoOpen = !isScenicInfoOpen" @toggle-routes="isRoutePanelOpen = !isRoutePanelOpen"
+        @toggle-digital-human="toggleDigitalHuman" />
     </aside>
+
+    <transition name="tourist-map-digital-human">
+      <section v-show="isDigitalHumanOpen" class="tourist-map__digital-human" aria-label="AI 数字人问答">
+        <div class="tourist-map__digital-human-stage">
+          <video ref="digitalHumanVideoRef" class="tourist-map__digital-human-source"
+            :class="{ 'tourist-map__digital-human-source--fallback': digitalHumanRenderFallback }" autoplay playsinline
+            muted></video>
+          <canvas ref="digitalHumanCanvasRef" class="tourist-map__digital-human-canvas"
+            :class="{ 'tourist-map__digital-human-canvas--hidden': digitalHumanRenderFallback }"
+            aria-label="透明背景数字人"></canvas>
+          <audio ref="digitalHumanAudioRef" autoplay></audio>
+          <div v-if="digitalHumanStatus !== 'connected'" class="tourist-map__digital-human-placeholder">
+            {{ digitalHumanStatusText }}
+          </div>
+        </div>
+      </section>
+    </transition>
+
+    <transition name="tourist-map-composer">
+      <form v-show="isDigitalHumanOpen" class="tourist-map__digital-human-composer"
+        @submit.prevent="sendDigitalHumanQuestion">
+        <n-input v-model:value="digitalHumanInput" round clearable :disabled="digitalHumanLoading"
+          placeholder="直接向数字人提问..." />
+        <n-button round class="tourist-map__digital-human-voice"
+          :class="{ 'tourist-map__digital-human-voice--recording': isDigitalHumanVoiceRecording }"
+          :disabled="digitalHumanLoading" :title="isDigitalHumanVoiceRecording ? '松开发送' : '按住说话'"
+          :aria-label="isDigitalHumanVoiceRecording ? '松开发送' : '按住说话'" @mousedown="handleDigitalHumanVoiceStart"
+          @mouseup="handleDigitalHumanVoiceStop" @mouseleave="handleDigitalHumanVoiceStop"
+          @touchstart.prevent="handleDigitalHumanVoiceStart" @touchend="handleDigitalHumanVoiceStop">
+          <template #icon>
+            <n-icon>
+              <MicOutline />
+            </n-icon>
+          </template>
+        </n-button>
+        <n-button round type="primary" attr-type="submit" :loading="digitalHumanLoading"
+          :disabled="!digitalHumanInput.trim()">
+          发送
+        </n-button>
+      </form>
+    </transition>
 
     <transition name="tourist-map-panel">
       <div v-show="isScenicInfoOpen" class="tourist-map__widgets tourist-map__widgets--info">
@@ -1338,6 +1860,156 @@ onMounted(fetchScenicOptions)
   line-height: 22px;
 }
 
+.tourist-map__digital-human {
+  position: absolute;
+  top: 26px;
+  left: 46px;
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: min(170px, 28vw);
+  pointer-events: none;
+}
+
+.tourist-map__digital-human-stage {
+  position: relative;
+  display: flex;
+  width: min(150px, 100%);
+  aspect-ratio: 9 / 16;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.tourist-map__digital-human-source {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tourist-map__digital-human-source--fallback {
+  position: static;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 1;
+}
+
+.tourist-map__digital-human-canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tourist-map__digital-human-canvas--hidden {
+  display: none;
+}
+
+.tourist-map__digital-human-placeholder {
+  position: absolute;
+  right: 16px;
+  bottom: 20px;
+  left: 16px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}
+
+.tourist-map__digital-human-composer {
+  position: absolute;
+  right: auto;
+  bottom: 22px;
+  left: 50%;
+  z-index: 7;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  width: min(760px, calc(100% - 220px));
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+  padding: 10px;
+  backdrop-filter: blur(18px);
+  /* 重点：数字人提问栏作为一个整体透明，输入框文字和按钮也一起降到 30%。 */
+  opacity: 0.6;
+  transform: translateX(-50%);
+}
+
+.tourist-map__digital-human-composer :deep(.n-input) {
+  min-width: 0;
+}
+
+.tourist-map__digital-human-composer :deep(.n-input .n-input__border),
+.tourist-map__digital-human-composer :deep(.n-input .n-input__state-border) {
+  border-color: rgba(255, 255, 255, 0.46);
+}
+
+.tourist-map__digital-human-composer :deep(.n-input .n-input-wrapper) {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.tourist-map__digital-human-composer :deep(.n-input-wrapper) {
+  min-height: 42px;
+}
+
+.tourist-map__digital-human-composer :deep(.n-button) {
+  background-color: rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.46);
+}
+
+.tourist-map__digital-human-composer :deep(.n-button--primary-type) {
+  background-color: rgba(20, 184, 166, 0.72);
+  border-color: rgba(20, 184, 166, 0.46);
+}
+
+.tourist-map__digital-human-voice {
+  min-width: 42px;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+}
+
+.tourist-map__digital-human-voice--recording {
+  background: #ef4444;
+  color: #fff;
+}
+
+.tourist-map__digital-human-voice--recording:hover {
+  background: #dc2626;
+  color: #fff;
+}
+
+.tourist-map-digital-human-enter-active,
+.tourist-map-digital-human-leave-active,
+.tourist-map-composer-enter-active,
+.tourist-map-composer-leave-active {
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.tourist-map-digital-human-enter-from,
+.tourist-map-digital-human-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.tourist-map-composer-enter-from,
+.tourist-map-composer-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 12px);
+}
+
 .tourist-map-panel-enter-active,
 .tourist-map-panel-leave-active {
   transition:
@@ -1386,6 +2058,26 @@ onMounted(fetchScenicOptions)
     bottom: 12px;
     width: auto;
     max-height: min(72vh, 620px);
+  }
+
+  .tourist-map__digital-human {
+    top: 16px;
+    left: 18px;
+    width: min(118px, 30vw);
+  }
+
+  .tourist-map__digital-human-stage {
+    width: min(104px, 100%);
+  }
+
+  .tourist-map__digital-human-composer {
+    right: 56px;
+    bottom: 14px;
+    left: 12px;
+    width: auto;
+    gap: 8px;
+    padding: 8px;
+    transform: none;
   }
 }
 
