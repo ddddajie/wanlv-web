@@ -16,6 +16,7 @@ import UserProfileEdit from '@/views/user/UserProfileEdit.vue'
 const MapWorkspace = defineAsyncComponent(() => import('@/views/map/MapWorkspace.vue'))
 const TouristMap = defineAsyncComponent(() => import('@/views/map/TouristMap.vue'))
 const UserIndex = defineAsyncComponent(() => import('@/views/index/UserIndex.vue'))
+const KnowledgeWorkspace = defineAsyncComponent(() => import('@/views/knowledge/KnowledgeWorkspace.vue'))
 const ReservationDashboardScreen = defineAsyncComponent(() => import('@/views/reservation/ReservationDashboardScreen.vue'))
 const ReservationWorkspace = defineAsyncComponent(() => import('@/views/reservation/ReservationWorkspace.vue'))
 const UserReservationDashboardScreen = defineAsyncComponent(
@@ -40,7 +41,7 @@ function getAvailableMenuKeys() {
 
   const keys = ['reservation-dashboard-screen', 'tourist-map']
   if (userStore.isSuperAdmin) {
-    keys.push('daily-report', 'admin-create-page', 'user-digital-profile-list')
+    keys.push('daily-report', 'knowledge-workspace', 'admin-create-page', 'user-digital-profile-list')
   }
   keys.push(
     'map-workspace',
@@ -133,6 +134,7 @@ const menuItems = computed(() => {
         children: [
           { key: 'map-workspace', label: '地图业务控制台' },
           { key: 'reservation-workspace', label: '预约管理' },
+          ...(canUseAnalysis.value ? [{ key: 'knowledge-workspace', label: '知识库管理' }] : []),
         ],
       },
       {
@@ -408,6 +410,8 @@ onBeforeUnmount(() => {
           <AdminCreate v-else-if="activeMenu === 'admin-create-page'" embedded @navigate="handleActionNavigate" />
 
           <MapWorkspace v-else-if="activeMenu === 'map-workspace'" />
+
+          <KnowledgeWorkspace v-else-if="activeMenu === 'knowledge-workspace'" />
 
           <AdminUserDetail v-else-if="activeMenu === 'user-admin-detail'" />
 

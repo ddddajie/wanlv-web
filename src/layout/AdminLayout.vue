@@ -28,6 +28,7 @@ const navItems = computed(() => {
   items.push({ label: '导游地图', path: '/tourist-map' })
 
   if (userStore.isSuperAdmin) {
+    items.push({ label: '知识库管理', path: '/knowledge' })
     items.push({ label: '新增管理员', path: '/admin/create' })
   }
 

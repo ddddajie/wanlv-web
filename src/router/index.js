@@ -51,6 +51,17 @@ const routes = [
           loginType: 'admin',
         },
       },
+      {
+        path: 'knowledge',
+        name: 'KnowledgeWorkspace',
+        component: () => import('@/views/knowledge/KnowledgeWorkspace.vue'),
+        meta: {
+          title: '知识库管理',
+          requiresAuth: true,
+          superAdminOnly: true,
+          loginType: 'admin',
+        },
+      },
     ],
   },
   {
@@ -94,7 +105,7 @@ router.beforeEach((to, from, next) => {
   }
 
   if (superAdminOnly && !userStore.isSuperAdmin) {
-    feedbackMessage.error('只有超级管理员才能新增管理员')
+    feedbackMessage.error('只有超级管理员才能访问该功能')
     next('/dashboard')
     return
   }
