@@ -24,6 +24,10 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  showDigitalHuman: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 const emit = defineEmits(['locate', 'refresh', 'toggle-info', 'toggle-routes', 'toggle-digital-human'])
@@ -33,7 +37,7 @@ const emit = defineEmits(['locate', 'refresh', 'toggle-info', 'toggle-routes', '
   <!-- 重点：景区信息和推荐路线都做成地图工具式 icon 小组件，避免占用顶部标题栏。 -->
   <div class="user-map-controls pointer-events-auto">
     <div class="user-map-controls__stack" aria-label="导游信息">
-      <n-tooltip placement="left">
+      <n-tooltip v-if="showDigitalHuman" placement="left">
         <template #trigger>
           <n-button
             quaternary

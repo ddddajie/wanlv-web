@@ -91,6 +91,7 @@ const currentUserId = computed(() => {
   const userId = Number(userStore.userId)
   return Number.isFinite(userId) && userId > 0 ? userId : null
 })
+const canUseDigitalHuman = computed(() => userStore.isLoggedIn)
 const digitalHumanStatusText = computed(() => ({
   connected: '已连接',
   connecting: '连接中',
@@ -634,6 +635,8 @@ async function stopDigitalHuman() {
 }
 
 async function toggleDigitalHuman() {
+  if (!canUseDigitalHuman.value) return
+
   isDigitalHumanOpen.value = !isDigitalHumanOpen.value
   if (isDigitalHumanOpen.value) {
     await nextTick()
@@ -766,6 +769,15 @@ watch(
   },
 )
 
+watch(canUseDigitalHuman, async (canUse) => {
+  if (canUse || !isDigitalHumanOpen.value) return
+
+  // 重点：游客可继续看导览地图，但未登录时关闭并隐藏 AI 数字人能力。
+  isDigitalHumanOpen.value = false
+  digitalHumanReply.value = ''
+  await stopDigitalHuman()
+})
+
 onMounted(() => {
   fetchScenicOptions()
   initDigitalHumanSpeechRecognition()
@@ -822,13 +834,13 @@ onUnmounted(() => {
 
     <aside class="pointer-events-none absolute right-1 top-4 z-[6]">
       <UserMapControls :loading="isLoadingMap" :info-open="isScenicInfoOpen" :route-open="isRoutePanelOpen"
-        :digital-human-open="isDigitalHumanOpen" @locate="mapCanvasRef?.locate()" @refresh="fetchMapData"
-        @toggle-info="isScenicInfoOpen = !isScenicInfoOpen" @toggle-routes="isRoutePanelOpen = !isRoutePanelOpen"
-        @toggle-digital-human="toggleDigitalHuman" />
+        :digital-human-open="isDigitalHumanOpen" :show-digital-human="canUseDigitalHuman"
+        @locate="mapCanvasRef?.locate()" @refresh="fetchMapData" @toggle-info="isScenicInfoOpen = !isScenicInfoOpen"
+        @toggle-routes="isRoutePanelOpen = !isRoutePanelOpen" @toggle-digital-human="toggleDigitalHuman" />
     </aside>
 
     <transition name="tourist-map-digital-human">
-      <section v-show="isDigitalHumanOpen" class="tourist-map__digital-human" aria-label="AI 数字人问答">
+      <section v-show="canUseDigitalHuman && isDigitalHumanOpen" class="tourist-map__digital-human" aria-label="AI 数字人问答">
         <div class="tourist-map__digital-human-stage">
           <video ref="digitalHumanVideoRef" class="tourist-map__digital-human-source"
             :class="{ 'tourist-map__digital-human-source--fallback': digitalHumanRenderFallback }" autoplay playsinline
@@ -845,7 +857,7 @@ onUnmounted(() => {
     </transition>
 
     <transition name="tourist-map-composer">
-      <form v-show="isDigitalHumanOpen" class="tourist-map__digital-human-composer"
+      <form v-show="canUseDigitalHuman && isDigitalHumanOpen" class="tourist-map__digital-human-composer"
         @submit.prevent="sendDigitalHumanQuestion">
         <n-input v-model:value="digitalHumanInput" round clearable :disabled="digitalHumanLoading"
           placeholder="直接向数字人提问..." />

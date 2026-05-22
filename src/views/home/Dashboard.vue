@@ -41,15 +41,20 @@ function getAvailableMenuKeys() {
 
   const keys = ['reservation-dashboard-screen', 'tourist-map']
   if (userStore.isSuperAdmin) {
-    keys.push('daily-report', 'knowledge-workspace', 'admin-create-page', 'user-digital-profile-list')
+    keys.push(
+      'daily-report',
+      'knowledge-workspace',
+      'admin-create-page',
+      'user-digital-profile-list',
+      'user-admin-detail',
+      'user-normal-detail',
+      'user-admin-list',
+      'user-normal-list',
+    )
   }
   keys.push(
     'map-workspace',
     'reservation-workspace',
-    'user-admin-detail',
-    'user-normal-detail',
-    'user-admin-list',
-    'user-normal-list',
   )
   return keys
 }
@@ -66,7 +71,8 @@ const isCompactSidebar = ref(false)
 const isSidebarOpen = ref(false)
 
 const canUseAnalysis = computed(() => userStore.isSuperAdmin)
-const canUseUserManagement = computed(() => userStore.isAdmin)
+const canUseScenicManagement = computed(() => userStore.isAdmin)
+const canUseUserManagement = computed(() => userStore.isSuperAdmin)
 const isGuest = computed(() => !userStore.isLoggedIn)
 const isDashboardScreenMenu = computed(() =>
   ['reservation-dashboard-screen', 'user-reservation-dashboard-screen'].includes(activeMenu.value),
@@ -126,7 +132,7 @@ const menuItems = computed(() => {
 
   items.push({ key: 'tourist-map', label: '导游地图' })
 
-  if (canUseUserManagement.value) {
+  if (canUseScenicManagement.value) {
     items.push(
       {
         key: 'scenic-management',
@@ -137,6 +143,11 @@ const menuItems = computed(() => {
           ...(canUseAnalysis.value ? [{ key: 'knowledge-workspace', label: '知识库管理' }] : []),
         ],
       },
+    )
+  }
+
+  if (canUseUserManagement.value) {
+    items.push(
       {
         key: 'user-management',
         label: '用户管理',
