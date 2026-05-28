@@ -27,7 +27,9 @@ const props = defineProps({
 const route = useRoute()
 const userStore = useUserStore(pinia)
 
-const STUN_SERVER = 'stun:stun.l.google.com:19302'
+// 数字人通常部署在本机或内网，默认不依赖 Google STUN，避免国内网络下连接被拖慢。
+const STUN_SERVER = import.meta.env.VITE_DIGITAL_HUMAN_STUN_SERVER || ''
+const ICE_GATHERING_TIMEOUT = STUN_SERVER ? 1200 : 300
 const SPEECH_START_DELAY = 1200
 const BASE_CHAR_INTERVAL = 185
 const FINISHED_HIDE_DELAY = 900
@@ -260,6 +262,11 @@ const startSimulatedSpeech = (text) => {
 
 const getDigitalHumanRenderConfig = () =>
   isMobile.value ? MOBILE_DIGITAL_HUMAN_RENDER_CONFIG : PC_DIGITAL_HUMAN_RENDER_CONFIG
+
+const getPeerConnectionConfig = () => ({
+  sdpSemantics: 'unified-plan',
+  iceServers: STUN_SERVER ? [{ urls: [STUN_SERVER] }] : [],
+})
 
 class DigitalHumanRenderer {
   constructor(canvas, getConfig) {
@@ -538,13 +545,23 @@ const negotiate = async () => {
     pc.value.addTransceiver('audio', { direction: 'recvonly' })
     const offer = await pc.value.createOffer()
     await pc.value.setLocalDescription(offer)
+    // ICE 收集不再无限等待，超时后先用已收集到的候选地址发起协商。
     await new Promise((resolve) => {
-      if (pc.value.iceGatheringState === 'complete') return resolve()
+      if (pc.value.iceGatheringState === 'complete') {
+        resolve()
+        return
+      }
+      let done = false
+      const finish = () => {
+        if (done) return
+        done = true
+        window.clearTimeout(timer)
+        pc.value?.removeEventListener('icegatheringstatechange', handler)
+        resolve()
+      }
+      const timer = window.setTimeout(finish, ICE_GATHERING_TIMEOUT)
       const handler = () => {
-        if (pc.value?.iceGatheringState === 'complete') {
-          pc.value.removeEventListener('icegatheringstatechange', handler)
-          resolve()
-        }
+        if (pc.value?.iceGatheringState === 'complete') finish()
       }
       pc.value.addEventListener('icegatheringstatechange', handler)
     })
@@ -562,7 +579,7 @@ const negotiate = async () => {
 
 const start = async () => {
   try {
-    pc.value = new RTCPeerConnection({ sdpSemantics: 'unified-plan', iceServers: [{ urls: [STUN_SERVER] }] })
+    pc.value = new RTCPeerConnection(getPeerConnectionConfig())
     pc.value.addEventListener('track', (event) => {
       const targetId = event.track.kind === 'video' ? 'digital-human-video' : 'digital-human-audio'
       const element = document.getElementById(targetId)
