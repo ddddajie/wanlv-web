@@ -39,7 +39,9 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore(pinia)
 const SCENIC_NAME_CACHE_KEY = 'wanlv:scenic-area-name-cache'
-const STUN_SERVER = 'stun:stun.l.google.com:19302'
+// 数字人通常部署在本机或内网，默认不依赖 Google STUN，避免国内网络下连接被拖慢。
+const STUN_SERVER = import.meta.env.VITE_DIGITAL_HUMAN_STUN_SERVER || ''
+const ICE_GATHERING_TIMEOUT = STUN_SERVER ? 1200 : 300
 const DIGITAL_HUMAN_API_URL =
   import.meta.env.VITE_DIGITAL_HUMAN_GUIDE_API_URL ||
   import.meta.env.VITE_DIGITAL_HUMAN_API_URL ||
@@ -554,22 +556,36 @@ function cleanupDigitalHumanConnection() {
   digitalHumanStatus.value = 'disconnected'
 }
 
+function getDigitalHumanPeerConnectionConfig() {
+  return {
+    sdpSemantics: 'unified-plan',
+    iceServers: STUN_SERVER ? [{ urls: [STUN_SERVER] }] : [],
+  }
+}
+
 async function negotiateDigitalHuman() {
   digitalHumanPc.value.addTransceiver('video', { direction: 'recvonly' })
   digitalHumanPc.value.addTransceiver('audio', { direction: 'recvonly' })
   const offer = await digitalHumanPc.value.createOffer()
   await digitalHumanPc.value.setLocalDescription(offer)
+  // ICE 收集不再无限等待，超时后先用已收集到的候选地址发起协商。
   await new Promise((resolve) => {
     if (digitalHumanPc.value.iceGatheringState === 'complete') {
       resolve()
       return
     }
 
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      window.clearTimeout(timer)
+      digitalHumanPc.value?.removeEventListener('icegatheringstatechange', handler)
+      resolve()
+    }
+    const timer = window.setTimeout(finish, ICE_GATHERING_TIMEOUT)
     const handler = () => {
-      if (digitalHumanPc.value?.iceGatheringState === 'complete') {
-        digitalHumanPc.value.removeEventListener('icegatheringstatechange', handler)
-        resolve()
-      }
+      if (digitalHumanPc.value?.iceGatheringState === 'complete') finish()
     }
     digitalHumanPc.value.addEventListener('icegatheringstatechange', handler)
   })
@@ -587,10 +603,7 @@ async function startDigitalHuman() {
 
   digitalHumanStatus.value = 'connecting'
   try {
-    digitalHumanPc.value = new RTCPeerConnection({
-      sdpSemantics: 'unified-plan',
-      iceServers: [{ urls: [STUN_SERVER] }],
-    })
+    digitalHumanPc.value = new RTCPeerConnection(getDigitalHumanPeerConnectionConfig())
     digitalHumanPc.value.addEventListener('track', (event) => {
       if (event.track.kind === 'video' && digitalHumanVideoRef.value) {
         digitalHumanVideoRef.value.srcObject = event.streams[0]
