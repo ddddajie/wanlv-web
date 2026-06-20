@@ -8,6 +8,7 @@ import guideAvatarImage from '@/assets/famale.png'
 import serviceAvatarImage from '@/assets/male.png'
 import {
   agentChatApi,
+  closeDigitalHumanSession,
   fetchDigitalHuman,
   fetchInterruptTalk,
   sendWebRTCOffer,
@@ -30,6 +31,8 @@ const userStore = useUserStore(pinia)
 // 数字人通常部署在本机或内网，默认不依赖 Google STUN，避免国内网络下连接被拖慢。
 const STUN_SERVER = import.meta.env.VITE_DIGITAL_HUMAN_STUN_SERVER || ''
 const ICE_GATHERING_TIMEOUT = STUN_SERVER ? 1200 : 300
+const CONNECTION_TIMEOUT = 15000
+const DISCONNECTED_RELEASE_DELAY = 4000
 const SPEECH_START_DELAY = 1200
 const BASE_CHAR_INTERVAL = 185
 const FINISHED_HIDE_DELAY = 900
@@ -89,6 +92,10 @@ let speechTypeTimer = null
 let bubbleHideTimer = null
 let activeSpeechToken = 0
 let digitalHumanRenderer = null
+let connectionAttemptId = 0
+let connectionTimeoutTimer = null
+let disconnectedReleaseTimer = null
+let activeDigitalHumanApiUrl = ''
 
 const toPositiveNumber = (value) => {
   const numberValue = Number(value)
@@ -533,54 +540,113 @@ const clearDigitalHumanMedia = () => {
   if (audio) audio.srcObject = null
 }
 
-const cleanupPeerConnection = () => {
-  clearDigitalHumanMedia()
-  if (pc.value) pc.value.close()
-  pc.value = null
+const clearConnectionTimers = () => {
+  if (connectionTimeoutTimer) window.clearTimeout(connectionTimeoutTimer)
+  if (disconnectedReleaseTimer) window.clearTimeout(disconnectedReleaseTimer)
+  connectionTimeoutTimer = null
+  disconnectedReleaseTimer = null
 }
 
-const negotiate = async () => {
+const cleanupPeerConnection = (connection = pc.value) => {
+  clearConnectionTimers()
+  clearDigitalHumanMedia()
+  // 先清空引用再 close，避免 closed 事件重复触发服务端释放。
+  if (pc.value === connection) pc.value = null
+  if (connection && connection.signalingState !== 'closed') connection.close()
+}
+
+const releaseDigitalHumanSession = async (sessionid, apiUrl, reason, keepalive = false) => {
+  if (!sessionid) return
   try {
-    pc.value.addTransceiver('video', { direction: 'recvonly' })
-    pc.value.addTransceiver('audio', { direction: 'recvonly' })
-    const offer = await pc.value.createOffer()
-    await pc.value.setLocalDescription(offer)
-    // ICE 收集不再无限等待，超时后先用已收集到的候选地址发起协商。
-    await new Promise((resolve) => {
-      if (pc.value.iceGatheringState === 'complete') {
-        resolve()
-        return
-      }
-      let done = false
-      const finish = () => {
-        if (done) return
-        done = true
-        window.clearTimeout(timer)
-        pc.value?.removeEventListener('icegatheringstatechange', handler)
-        resolve()
-      }
-      const timer = window.setTimeout(finish, ICE_GATHERING_TIMEOUT)
-      const handler = () => {
-        if (pc.value?.iceGatheringState === 'complete') finish()
-      }
-      pc.value.addEventListener('icegatheringstatechange', handler)
-    })
-    const response = await sendWebRTCOffer(
-      { sdp: pc.value.localDescription.sdp, type: pc.value.localDescription.type },
-      selectedAvatar.value?.apiUrl,
-    )
-    digitalHumanSessionId.value = response.data.sessionid
-    await pc.value.setRemoteDescription(response.data)
+    await closeDigitalHumanSession({ sessionid, reason }, apiUrl, { keepalive })
   } catch (error) {
-    ElMessage.error(`WebRTC 协商失败：${error.message}`)
-    connectionStatus.value = 'disconnected'
+    console.warn('Failed to release digital human session:', error)
+    if (keepalive) return
+    // 兼容尚未升级 /session/close 的旧服务，至少先停止当前播报。
+    try {
+      await fetchInterruptTalk({ sessionid }, apiUrl)
+    } catch (interruptError) {
+      console.warn('Failed to interrupt digital human speech:', interruptError)
+    }
   }
 }
 
+const negotiate = async (connection, attemptId, apiUrl) => {
+  connection.addTransceiver('video', { direction: 'recvonly' })
+  connection.addTransceiver('audio', { direction: 'recvonly' })
+  const offer = await connection.createOffer()
+  await connection.setLocalDescription(offer)
+  // ICE 收集不再无限等待，超时后先用已收集到的候选地址发起协商。
+  await new Promise((resolve) => {
+    if (connection.iceGatheringState === 'complete') {
+      resolve()
+      return
+    }
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      window.clearTimeout(timer)
+      connection.removeEventListener('icegatheringstatechange', handler)
+      resolve()
+    }
+    const timer = window.setTimeout(finish, ICE_GATHERING_TIMEOUT)
+    const handler = () => {
+      if (connection.iceGatheringState === 'complete') finish()
+    }
+    connection.addEventListener('icegatheringstatechange', handler)
+  })
+  const response = await sendWebRTCOffer(
+    { sdp: connection.localDescription.sdp, type: connection.localDescription.type },
+    apiUrl,
+  )
+  const sessionid = Number(response.data?.sessionid)
+  if (!sessionid || !response.data?.sdp || !response.data?.type) {
+    throw new Error(response.data?.msg || '数字人服务未返回有效会话')
+  }
+
+  // 用户可能在 /offer 返回前已经退出页面，迟到的会话必须立即归还服务端。
+  if (attemptId !== connectionAttemptId || pc.value !== connection) {
+    await releaseDigitalHumanSession(sessionid, apiUrl, 'stale_offer', true)
+    if (connection.signalingState !== 'closed') connection.close()
+    return false
+  }
+
+  digitalHumanSessionId.value = sessionid
+  activeDigitalHumanApiUrl = apiUrl
+  await connection.setRemoteDescription(response.data)
+  return attemptId === connectionAttemptId && pc.value === connection
+}
+
+const stop = async ({ reason = 'manual', keepalive = false } = {}) => {
+  connectionAttemptId += 1
+  const sessionid = digitalHumanSessionId.value
+  const apiUrl = activeDigitalHumanApiUrl || selectedAvatar.value?.apiUrl
+
+  // 本地资源先同步清理，服务端释放失败也不能阻塞用户下一次连接。
+  digitalHumanSessionId.value = 0
+  activeDigitalHumanApiUrl = ''
+  connectionStatus.value = 'disconnected'
+  resetSpeechBubble()
+  cleanupPeerConnection()
+  await releaseDigitalHumanSession(sessionid, apiUrl, reason, keepalive)
+}
+
 const start = async () => {
+  const attemptId = connectionAttemptId + 1
+  connectionAttemptId = attemptId
+  const apiUrl = selectedAvatar.value?.apiUrl
+  const connection = new RTCPeerConnection(getPeerConnectionConfig())
+  pc.value = connection
+  connectionTimeoutTimer = window.setTimeout(() => {
+    if (attemptId !== connectionAttemptId || pc.value !== connection) return
+    ElMessage.error('数字人连接超时，请重试。')
+    void stop({ reason: 'connect_timeout' })
+  }, CONNECTION_TIMEOUT)
+
   try {
-    pc.value = new RTCPeerConnection(getPeerConnectionConfig())
-    pc.value.addEventListener('track', (event) => {
+    connection.addEventListener('track', (event) => {
+      if (attemptId !== connectionAttemptId || pc.value !== connection) return
       const targetId = event.track.kind === 'video' ? 'digital-human-video' : 'digital-human-audio'
       const element = document.getElementById(targetId)
       if (event.track.kind === 'video') {
@@ -589,34 +655,32 @@ const start = async () => {
       }
       if (element) element.srcObject = event.streams[0]
     })
-    pc.value.addEventListener('connectionstatechange', () => {
-      const state = pc.value?.connectionState
-      if (state === 'connected') return (connectionStatus.value = 'connected')
-      if (['disconnected', 'failed', 'closed'].includes(state)) {
-        connectionStatus.value = 'disconnected'
-        clearDigitalHumanMedia()
-        resetSpeechBubble()
+    connection.addEventListener('connectionstatechange', () => {
+      if (attemptId !== connectionAttemptId || pc.value !== connection) return
+      const state = connection.connectionState
+      if (state === 'connected') {
+        clearConnectionTimers()
+        connectionStatus.value = 'connected'
+        return
       }
+      if (state === 'disconnected') {
+        connectionStatus.value = 'connecting'
+        if (disconnectedReleaseTimer) window.clearTimeout(disconnectedReleaseTimer)
+        disconnectedReleaseTimer = window.setTimeout(() => {
+          if (pc.value === connection && connection.connectionState === 'disconnected') {
+            void stop({ reason: 'connection_disconnected' })
+          }
+        }, DISCONNECTED_RELEASE_DELAY)
+        return
+      }
+      if (['failed', 'closed'].includes(state)) void stop({ reason: `connection_${state}` })
     })
-    await negotiate()
+    await negotiate(connection, attemptId, apiUrl)
   } catch (error) {
+    if (attemptId !== connectionAttemptId) return
     ElMessage.error(`启动连接失败：${error.message}`)
-    connectionStatus.value = 'disconnected'
+    await stop({ reason: 'connect_failed' })
   }
-}
-
-const stop = async () => {
-  try {
-    if (digitalHumanSessionId.value) {
-      await fetchInterruptTalk({ sessionid: digitalHumanSessionId.value }, selectedAvatar.value?.apiUrl)
-    }
-  } catch (error) {
-    console.error('Failed to interrupt speech:', error)
-  }
-  resetSpeechBubble()
-  cleanupPeerConnection()
-  digitalHumanSessionId.value = 0
-  connectionStatus.value = 'disconnected'
 }
 
 const interruptCurrentSpeech = async () => {
@@ -679,9 +743,10 @@ const sendChatMessage = async ({ presetText = '', messageType = 'text' } = {}) =
   }
 }
 
-const handleConnectDigitalHuman = () => {
+const handleConnectDigitalHuman = async () => {
+  if (connectionStatus.value !== 'disconnected') return
   connectionStatus.value = 'connecting'
-  start()
+  await start()
 }
 
 const openAvatarSelector = () => {
@@ -774,8 +839,18 @@ const seedInitialContext = () => {
 }
 
 const handleBeforeUnload = () => {
-  resetSpeechBubble()
-  cleanupPeerConnection()
+  void stop({ reason: 'before_unload', keepalive: true })
+}
+
+const handlePageHide = () => {
+  void stop({ reason: 'page_hide', keepalive: true })
+}
+
+const handleVisibilityChange = () => {
+  // 安卓 APP/WebView 退到后台时主动释放，避免下一次进入仍占用上一次会话。
+  if (document.visibilityState === 'hidden') {
+    void stop({ reason: 'page_hidden', keepalive: true })
+  }
 }
 
 onMounted(() => {
@@ -788,12 +863,12 @@ onMounted(() => {
   seedInitialContext()
   window.addEventListener('resize', syncScreenMode)
   window.addEventListener('beforeunload', handleBeforeUnload)
-  window.addEventListener('unload', handleBeforeUnload)
+  window.addEventListener('pagehide', handlePageHide)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
-  resetSpeechBubble()
-  cleanupPeerConnection()
+  void stop({ reason: 'component_unmounted', keepalive: true })
   if (isVoiceRecording.value && mediaRecorder.value) {
     mediaRecorder.value.stop()
     mediaRecorder.value.stream?.getTracks().forEach((track) => track.stop())
@@ -803,7 +878,8 @@ onUnmounted(() => {
   digitalHumanRenderer = null
   window.removeEventListener('resize', syncScreenMode)
   window.removeEventListener('beforeunload', handleBeforeUnload)
-  window.removeEventListener('unload', handleBeforeUnload)
+  window.removeEventListener('pagehide', handlePageHide)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 

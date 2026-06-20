@@ -7,6 +7,7 @@ export const useUserStore = defineStore('wanlv-user', {
   }),
   getters: {
     token: (state) => state.userInfo?.token || '',
+    refreshToken: (state) => state.userInfo?.refreshToken || '',
     isLoggedIn: (state) => state.isLogin && Boolean(state.userInfo?.token),
     userId: (state) => state.userInfo?.id ?? '',
     username: (state) => state.userInfo?.username ?? '',
@@ -27,6 +28,7 @@ export const useUserStore = defineStore('wanlv-user', {
         ...userInfo,
         // JWT 是后端校验登录态的凭证，必须跟随用户信息一起持久化。
         token: userInfo.token || '',
+        refreshToken: userInfo.refreshToken || '',
         displayName:
           userInfo.displayName ||
           userInfo.realName ||
@@ -46,6 +48,16 @@ export const useUserStore = defineStore('wanlv-user', {
         ...this.userInfo,
         ...partial,
       })
+    },
+    updateTokenPair(tokenPair) {
+      if (!this.userInfo || !tokenPair?.token || !tokenPair?.refreshToken) return
+
+      // 重点：后端刷新后会轮换 refreshToken，两个 Token 必须一起覆盖。
+      this.userInfo = this.normalizeUserInfo({
+        ...this.userInfo,
+        ...tokenPair,
+      })
+      this.isLogin = true
     },
     clearLogin() {
       this.userInfo = null

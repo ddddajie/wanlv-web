@@ -113,6 +113,8 @@ VITE_API_BASE_URL=http://127.0.0.1:8080
 VITE_DIGITAL_HUMAN_API_URL=http://127.0.0.1:8010
 VITE_DIGITAL_HUMAN_GUIDE_API_URL=
 VITE_DIGITAL_HUMAN_SERVICE_API_URL=
+VITE_DIGITAL_HUMAN_STUN_SERVER=
+VITE_DIGITAL_HUMAN_CLOSE_PATH=/session/close
 VITE_MAP_STYLE_URL=
 VITE_MAP_VECTOR_SOURCE_URL=http://127.0.0.1:3000/china
 VITE_MAP_RASTER_TILE_URL=
@@ -125,6 +127,8 @@ VITE_MAP_TILE_ATTRIBUTION=Local Martin tiles
 - `VITE_DIGITAL_HUMAN_API_URL`：数字人服务默认地址。
 - `VITE_DIGITAL_HUMAN_GUIDE_API_URL`：导览数字人服务地址；未配置时可回退到默认数字人服务。
 - `VITE_DIGITAL_HUMAN_SERVICE_API_URL`：通用数字人服务地址；未配置时可回退到默认数字人服务。
+- `VITE_DIGITAL_HUMAN_STUN_SERVER`：公网或跨 NAT 时使用的 STUN/TURN 地址；纯本地局域网保持为空。
+- `VITE_DIGITAL_HUMAN_CLOSE_PATH`：数字人服务端主动释放会话接口，默认为 `/session/close`。
 - `VITE_MAP_STYLE_URL`：MapLibre `style.json` 地址；配置后优先使用远程样式。
 - `VITE_MAP_VECTOR_SOURCE_URL`：Martin TileJSON 或矢量瓦片源地址。
 - `VITE_MAP_RASTER_TILE_URL`：栅格瓦片模板地址；未配置时回退到 OpenStreetMap 默认瓦片。
@@ -183,12 +187,14 @@ VITE_MAP_TILE_ATTRIBUTION=Local Martin tiles
 - 默认超时时间：`600000ms`。
 - 登录成功后统一携带 `Authorization: Bearer <token>`。
 - 响应数据默认按 `{ code, msg, data }` 结构处理，`code === 200` 时返回 `data`。
-- `code === 401` 或 HTTP 401 会清理本地登录状态，并跳转到对应登录页。
+- 普通用户遇到 `code === 401` 或 HTTP 401 时，会单飞刷新并重放原请求；刷新失败后才清理登录状态。
+- 管理员不签发 refreshToken，遇到 401 时直接清理登录状态并跳转管理员登录页。
 - 其他业务错误会通过全局消息提示，并返回 rejected Promise。
 
 主要接口封装：
 
-- `src/api/user.js`：超级管理员初始化、管理员登录/新增/更新/详情/删除/分页、普通用户注册/登录/验证码/实名/更新/详情/删除/分页、用户数字画像。
+- `src/api/user.js`：超级管理员初始化、管理员登录/新增/更新/详情/删除/分页、普通用户注册/登录/验证码/注销/实名/更新/详情/删除/分页、用户数字画像。
+- `src/api/token.js`：普通用户 refreshToken 刷新接口。
 - `src/api/reservation.js`：可预约景点、预约时段、用户订单、取消预约、入园确认、预约规则、时段生成、订单分页和预约运营看板。
 - `src/api/map.js`：景区、景点、路线、路线地理数据、空间要素、地图初始化、Agent 最新路线和地图交互日志。
 - `src/api/chat.js`：Agent 问答、会话分析、日报分析、景区绑定、数字人播报、语音状态、录音、打断和 WebRTC offer。
@@ -233,6 +239,8 @@ pnpm build
 
 - `VITE_API_BASE_URL` 指向可访问的后端服务。
 - 数字人相关环境变量指向可访问的数字人服务。
+- 安卓真机访问局域网服务时，`VITE_SERVER_HOST` 必须填写服务端电脑的局域网 IP，不能使用真机自身的 `127.0.0.1`。
+- 数字人连接和自动释放的完整接口约定见 `docs/digital-human-session-lifecycle.md`。
 - 地图相关环境变量指向可访问的地图服务或瓦片服务。
 - 后端已正确配置跨域，或前端静态服务已做好反向代理。
 - 静态服务对 Vue Router history 模式做好回退配置，避免刷新非根路径时返回 404。

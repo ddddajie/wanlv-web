@@ -17,6 +17,7 @@ import {
 import { getLatestAgentRouteGeoApi, getMapInitApi, pageScenicAreasApi } from '@/api/map'
 import {
   agentChatApi,
+  closeDigitalHumanSession,
   fetchDigitalHuman,
   fetchInterruptTalk,
   sendWebRTCOffer,
@@ -42,6 +43,8 @@ const SCENIC_NAME_CACHE_KEY = 'wanlv:scenic-area-name-cache'
 // 数字人通常部署在本机或内网，默认不依赖 Google STUN，避免国内网络下连接被拖慢。
 const STUN_SERVER = import.meta.env.VITE_DIGITAL_HUMAN_STUN_SERVER || ''
 const ICE_GATHERING_TIMEOUT = STUN_SERVER ? 1200 : 300
+const DIGITAL_HUMAN_CONNECTION_TIMEOUT = 15000
+const DIGITAL_HUMAN_DISCONNECTED_RELEASE_DELAY = 4000
 const DIGITAL_HUMAN_API_URL =
   import.meta.env.VITE_DIGITAL_HUMAN_GUIDE_API_URL ||
   import.meta.env.VITE_DIGITAL_HUMAN_API_URL ||
@@ -75,6 +78,9 @@ const digitalHumanMediaRecorder = ref(null)
 const digitalHumanRecognition = ref(null)
 
 let digitalHumanRenderer = null
+let digitalHumanConnectionAttemptId = 0
+let digitalHumanConnectionTimeoutTimer = null
+let digitalHumanDisconnectedReleaseTimer = null
 
 const scenicArea = computed(() => mapData.value?.scenicArea || null)
 const spots = computed(() => mapData.value?.spots || [])
@@ -548,11 +554,19 @@ function clearDigitalHumanMedia() {
   }
 }
 
-function cleanupDigitalHumanConnection() {
+function clearDigitalHumanConnectionTimers() {
+  if (digitalHumanConnectionTimeoutTimer) window.clearTimeout(digitalHumanConnectionTimeoutTimer)
+  if (digitalHumanDisconnectedReleaseTimer) window.clearTimeout(digitalHumanDisconnectedReleaseTimer)
+  digitalHumanConnectionTimeoutTimer = null
+  digitalHumanDisconnectedReleaseTimer = null
+}
+
+function cleanupDigitalHumanConnection(connection = digitalHumanPc.value) {
+  clearDigitalHumanConnectionTimers()
   clearDigitalHumanMedia()
-  digitalHumanPc.value?.close()
-  digitalHumanPc.value = null
-  digitalHumanSessionId.value = 0
+  // 先清空引用再 close，避免 closed 回调重复释放同一服务端会话。
+  if (digitalHumanPc.value === connection) digitalHumanPc.value = null
+  if (connection && connection.signalingState !== 'closed') connection.close()
   digitalHumanStatus.value = 'disconnected'
 }
 
@@ -563,14 +577,34 @@ function getDigitalHumanPeerConnectionConfig() {
   }
 }
 
-async function negotiateDigitalHuman() {
-  digitalHumanPc.value.addTransceiver('video', { direction: 'recvonly' })
-  digitalHumanPc.value.addTransceiver('audio', { direction: 'recvonly' })
-  const offer = await digitalHumanPc.value.createOffer()
-  await digitalHumanPc.value.setLocalDescription(offer)
+async function releaseDigitalHumanSession(sessionid, reason, keepalive = false) {
+  if (!sessionid) return
+  try {
+    await closeDigitalHumanSession(
+      { sessionid, reason },
+      DIGITAL_HUMAN_API_URL,
+      { keepalive },
+    )
+  } catch (error) {
+    console.warn('Failed to release digital human session:', error)
+    if (keepalive) return
+    // 兼容尚未升级 /session/close 的旧服务，至少先停止当前播报。
+    try {
+      await fetchInterruptTalk({ sessionid }, DIGITAL_HUMAN_API_URL)
+    } catch (interruptError) {
+      console.warn('Failed to interrupt digital human speech:', interruptError)
+    }
+  }
+}
+
+async function negotiateDigitalHuman(connection, attemptId) {
+  connection.addTransceiver('video', { direction: 'recvonly' })
+  connection.addTransceiver('audio', { direction: 'recvonly' })
+  const offer = await connection.createOffer()
+  await connection.setLocalDescription(offer)
   // ICE 收集不再无限等待，超时后先用已收集到的候选地址发起协商。
   await new Promise((resolve) => {
-    if (digitalHumanPc.value.iceGatheringState === 'complete') {
+    if (connection.iceGatheringState === 'complete') {
       resolve()
       return
     }
@@ -580,31 +614,54 @@ async function negotiateDigitalHuman() {
       if (done) return
       done = true
       window.clearTimeout(timer)
-      digitalHumanPc.value?.removeEventListener('icegatheringstatechange', handler)
+      connection.removeEventListener('icegatheringstatechange', handler)
       resolve()
     }
     const timer = window.setTimeout(finish, ICE_GATHERING_TIMEOUT)
     const handler = () => {
-      if (digitalHumanPc.value?.iceGatheringState === 'complete') finish()
+      if (connection.iceGatheringState === 'complete') finish()
     }
-    digitalHumanPc.value.addEventListener('icegatheringstatechange', handler)
+    connection.addEventListener('icegatheringstatechange', handler)
   })
 
   const response = await sendWebRTCOffer(
-    { sdp: digitalHumanPc.value.localDescription.sdp, type: digitalHumanPc.value.localDescription.type },
+    { sdp: connection.localDescription.sdp, type: connection.localDescription.type },
     DIGITAL_HUMAN_API_URL,
   )
-  digitalHumanSessionId.value = response.data.sessionid
-  await digitalHumanPc.value.setRemoteDescription(response.data)
+  const sessionid = Number(response.data?.sessionid)
+  if (!sessionid || !response.data?.sdp || !response.data?.type) {
+    throw new Error(response.data?.msg || '数字人服务未返回有效会话')
+  }
+
+  // 面板关闭可能早于 /offer 返回，迟到的会话必须立即归还服务端。
+  if (attemptId !== digitalHumanConnectionAttemptId || digitalHumanPc.value !== connection) {
+    await releaseDigitalHumanSession(sessionid, 'stale_offer', true)
+    if (connection.signalingState !== 'closed') connection.close()
+    return false
+  }
+
+  digitalHumanSessionId.value = sessionid
+  await connection.setRemoteDescription(response.data)
+  return attemptId === digitalHumanConnectionAttemptId && digitalHumanPc.value === connection
 }
 
 async function startDigitalHuman() {
   if (digitalHumanStatus.value === 'connecting' || digitalHumanStatus.value === 'connected') return
 
   digitalHumanStatus.value = 'connecting'
+  const attemptId = digitalHumanConnectionAttemptId + 1
+  digitalHumanConnectionAttemptId = attemptId
+  const connection = new RTCPeerConnection(getDigitalHumanPeerConnectionConfig())
+  digitalHumanPc.value = connection
+  digitalHumanConnectionTimeoutTimer = window.setTimeout(() => {
+    if (attemptId !== digitalHumanConnectionAttemptId || digitalHumanPc.value !== connection) return
+    message.error('数字人连接超时，请重试')
+    void stopDigitalHuman({ reason: 'connect_timeout' })
+  }, DIGITAL_HUMAN_CONNECTION_TIMEOUT)
+
   try {
-    digitalHumanPc.value = new RTCPeerConnection(getDigitalHumanPeerConnectionConfig())
-    digitalHumanPc.value.addEventListener('track', (event) => {
+    connection.addEventListener('track', (event) => {
+      if (attemptId !== digitalHumanConnectionAttemptId || digitalHumanPc.value !== connection) return
       if (event.track.kind === 'video' && digitalHumanVideoRef.value) {
         digitalHumanVideoRef.value.srcObject = event.streams[0]
         digitalHumanVideoRef.value.onloadedmetadata = startDigitalHumanRender
@@ -616,35 +673,47 @@ async function startDigitalHuman() {
         digitalHumanAudioRef.value.srcObject = event.streams[0]
       }
     })
-    digitalHumanPc.value.addEventListener('connectionstatechange', () => {
-      const state = digitalHumanPc.value?.connectionState
+    connection.addEventListener('connectionstatechange', () => {
+      if (attemptId !== digitalHumanConnectionAttemptId || digitalHumanPc.value !== connection) return
+      const state = connection.connectionState
       if (state === 'connected') {
+        clearDigitalHumanConnectionTimers()
         digitalHumanStatus.value = 'connected'
         return
       }
-      if (['disconnected', 'failed', 'closed'].includes(state)) {
-        clearDigitalHumanMedia()
-        digitalHumanStatus.value = 'disconnected'
+      if (state === 'disconnected') {
+        digitalHumanStatus.value = 'connecting'
+        if (digitalHumanDisconnectedReleaseTimer) {
+          window.clearTimeout(digitalHumanDisconnectedReleaseTimer)
+        }
+        digitalHumanDisconnectedReleaseTimer = window.setTimeout(() => {
+          if (digitalHumanPc.value === connection && connection.connectionState === 'disconnected') {
+            void stopDigitalHuman({ reason: 'connection_disconnected' })
+          }
+        }, DIGITAL_HUMAN_DISCONNECTED_RELEASE_DELAY)
+        return
+      }
+      if (['failed', 'closed'].includes(state)) {
+        void stopDigitalHuman({ reason: `connection_${state}` })
       }
     })
-    await negotiateDigitalHuman()
+    await negotiateDigitalHuman(connection, attemptId)
   } catch (error) {
+    if (attemptId !== digitalHumanConnectionAttemptId) return
     console.error('Failed to connect digital human:', error)
-    cleanupDigitalHumanConnection()
+    await stopDigitalHuman({ reason: 'connect_failed' })
     message.error(`数字人连接失败：${error.message || '请稍后再试'}`)
   }
 }
 
-async function stopDigitalHuman() {
-  try {
-    if (digitalHumanSessionId.value) {
-      await fetchInterruptTalk({ sessionid: digitalHumanSessionId.value }, DIGITAL_HUMAN_API_URL)
-    }
-  } catch (error) {
-    console.error('Failed to interrupt digital human:', error)
-  } finally {
-    cleanupDigitalHumanConnection()
-  }
+async function stopDigitalHuman({ reason = 'manual', keepalive = false } = {}) {
+  digitalHumanConnectionAttemptId += 1
+  const sessionid = digitalHumanSessionId.value
+
+  // 本地轨道先同步释放，服务端接口异常也不能影响下一次连接。
+  digitalHumanSessionId.value = 0
+  cleanupDigitalHumanConnection()
+  await releaseDigitalHumanSession(sessionid, reason, keepalive)
 }
 
 async function toggleDigitalHuman() {
@@ -653,7 +722,7 @@ async function toggleDigitalHuman() {
   isDigitalHumanOpen.value = !isDigitalHumanOpen.value
   if (isDigitalHumanOpen.value) {
     await nextTick()
-    startDigitalHuman()
+    await startDigitalHuman()
     return
   }
   digitalHumanReply.value = ''
@@ -788,16 +857,40 @@ watch(canUseDigitalHuman, async (canUse) => {
   // 重点：游客可继续看导览地图，但未登录时关闭并隐藏 AI 数字人能力。
   isDigitalHumanOpen.value = false
   digitalHumanReply.value = ''
-  await stopDigitalHuman()
+  await stopDigitalHuman({ reason: 'login_expired' })
 })
+
+function handleDigitalHumanPageExit(reason) {
+  isDigitalHumanOpen.value = false
+  digitalHumanReply.value = ''
+  void stopDigitalHuman({ reason, keepalive: true })
+}
+
+function handleDigitalHumanBeforeUnload() {
+  handleDigitalHumanPageExit('before_unload')
+}
+
+function handleDigitalHumanPageHide() {
+  handleDigitalHumanPageExit('page_hide')
+}
+
+function handleDigitalHumanVisibilityChange() {
+  // 安卓 APP/WebView 退到后台时主动释放，避免恢复页面后沿用已失效会话。
+  if (document.visibilityState === 'hidden') {
+    handleDigitalHumanPageExit('page_hidden')
+  }
+}
 
 onMounted(() => {
   fetchScenicOptions()
   initDigitalHumanSpeechRecognition()
+  window.addEventListener('beforeunload', handleDigitalHumanBeforeUnload)
+  window.addEventListener('pagehide', handleDigitalHumanPageHide)
+  document.addEventListener('visibilitychange', handleDigitalHumanVisibilityChange)
 })
 
 onUnmounted(() => {
-  cleanupDigitalHumanConnection()
+  handleDigitalHumanPageExit('component_unmounted')
   if (isDigitalHumanVoiceRecording.value && digitalHumanMediaRecorder.value) {
     digitalHumanMediaRecorder.value.stop()
     digitalHumanMediaRecorder.value.stream?.getTracks().forEach((track) => track.stop())
@@ -805,6 +898,9 @@ onUnmounted(() => {
   digitalHumanRecognition.value?.stop()
   digitalHumanRenderer?.destroy()
   digitalHumanRenderer = null
+  window.removeEventListener('beforeunload', handleDigitalHumanBeforeUnload)
+  window.removeEventListener('pagehide', handleDigitalHumanPageHide)
+  document.removeEventListener('visibilitychange', handleDigitalHumanVisibilityChange)
 })
 </script>
 

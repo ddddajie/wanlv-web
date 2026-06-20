@@ -1,6 +1,7 @@
 <script setup>
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { normalLogoutApi } from '@/api/user'
 import { pinia, useUserStore } from '@/stores'
 import { dialog } from '@/utils/feedback'
 import AdminCreate from '@/views/user/AdminCreate.vue'
@@ -269,8 +270,18 @@ async function handleLogout() {
       cancelButtonText: '取消',
     })
 
-    userStore.clearLogin()
-    router.replace('/normal/login')
+    const userType = userStore.userType
+    const refreshToken = userStore.refreshToken
+
+    try {
+      if (userType === 'normal' && refreshToken) {
+        await normalLogoutApi(refreshToken)
+      }
+    } finally {
+      // 即使注销接口网络异常，也必须立即清理本地登录凭证。
+      userStore.clearLogin()
+      router.replace(userType === 'admin' ? '/admin/login' : '/normal/login')
+    }
   } catch {
     return
   }

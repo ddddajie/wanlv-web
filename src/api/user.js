@@ -28,6 +28,10 @@ export function normalPhoneCodeLoginApi(data) {
   return request.post('/user/normal/code/login', data)
 }
 
+export function normalLogoutApi(refreshToken) {
+  return request.post('/user/normal/logout', { refreshToken })
+}
+
 export function verifyNormalUserRealNameApi(data) {
   return request.post('/user/normal/real-name/verify', data)
 }

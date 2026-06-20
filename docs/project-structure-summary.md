@@ -117,7 +117,8 @@ wanlv-web/
 - 请求前自动从 `userStore.token` 追加 `Authorization: Bearer <token>`。
 - 响应按 `{ code, msg, data }` 结构处理。
 - `code === 200` 时返回 `data`。
-- `code === 401` 或 HTTP 401 时清理登录状态，并跳转对应登录页。
+- 普通用户收到 `code === 401` 或 HTTP 401 时单飞刷新 Token，并在成功后重放原请求。
+- 刷新失败、重放后仍为 401 或管理员请求返回 401 时，清理登录状态并跳转对应登录页。
 - 其他错误统一通过反馈工具提示。
 
 ### `src/api/user.js`
@@ -126,7 +127,7 @@ wanlv-web/
 
 - 超级管理员初始化。
 - 管理员登录、新增、更新、详情、删除、分页。
-- 普通用户注册、账号登录、验证码发送、验证码登录。
+- 普通用户注册、账号登录、验证码发送、验证码登录、退出登录。
 - 普通用户实名认证、资料更新、详情、删除、分页。
 
 ### `src/api/reservation.js`
@@ -283,11 +284,11 @@ wanlv-web/
 ### 登录与权限流
 
 1. 用户进入登录页提交账号信息。
-2. 登录接口返回用户信息和 token。
+2. 普通用户登录接口返回用户信息、token 和 refreshToken，管理员登录只返回 token。
 3. `userStore.setLogin()` 规范化并持久化用户信息。
 4. 后续请求由 `request.js` 自动携带 token。
 5. 路由守卫根据 `isLoggedIn`、`isAdmin`、`isSuperAdmin` 控制页面访问。
-6. token 失效或接口返回 401 时，清理登录态并跳转登录页。
+6. 普通用户 token 失效时单飞刷新并重放请求；刷新失败或管理员接口返回 401 时清理登录态并跳转登录页。
 
 ### 控制台页面切换流
 
@@ -351,4 +352,3 @@ wanlv-web/
 - 预约业务尽量集中在 `src/views/reservation/`，接口统一走 `src/api/reservation.js`。
 - 全局请求错误、登录失效、消息提示优先复用 `src/utils/request.js` 和 `src/utils/feedback.js`。
 - 重点业务逻辑建议补充简短中文注释，尤其是权限判断、数据格式转换、地图坐标处理、预约容量计算和数字人连接逻辑。
-

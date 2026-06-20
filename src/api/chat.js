@@ -3,10 +3,17 @@ import request from '@/utils/request'
 
 const DIGITAL_HUMAN_API_URL =
   import.meta.env.VITE_DIGITAL_HUMAN_API_URL || 'http://localhost:8010'
+const DIGITAL_HUMAN_CLOSE_PATH =
+  import.meta.env.VITE_DIGITAL_HUMAN_CLOSE_PATH || '/session/close'
+
+const getDigitalHumanUrl = (path, apiUrl) => {
+  const baseUrl = String(apiUrl || DIGITAL_HUMAN_API_URL).replace(/\/$/, '')
+  const normalizedPath = String(path).startsWith('/') ? path : `/${path}`
+  return `${baseUrl}${normalizedPath}`
+}
 
 const digitalHumanPost = (path, data, apiUrl) => {
-  const baseUrl = String(apiUrl || DIGITAL_HUMAN_API_URL).replace(/\/$/, '')
-  return axios.post(`${baseUrl}${path}`, data)
+  return axios.post(getDigitalHumanUrl(path, apiUrl), data)
 }
 
 export const agentChatApi = (data) => request.post('/agent/chat', data)
@@ -57,4 +64,28 @@ export const fetchStopRecord = (data, apiUrl) => {
 
 export const sendWebRTCOffer = (data, apiUrl) => {
   return digitalHumanPost('/offer', data, apiUrl)
+}
+
+export const closeDigitalHumanSession = async (data, apiUrl, { keepalive = false } = {}) => {
+  const url = getDigitalHumanUrl(DIGITAL_HUMAN_CLOSE_PATH, apiUrl)
+
+  if (keepalive && typeof fetch === 'function') {
+    // 页面退出或安卓 WebView 退后台时使用 keepalive，尽量保证释放请求能离开当前页面。
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      keepalive: true,
+    })
+    if (!response.ok) throw new Error(`释放数字人会话失败（HTTP ${response.status}）`)
+    const payload = await response.json()
+    if (payload?.code !== 0) throw new Error(payload?.msg || '释放数字人会话失败')
+    return { data: payload }
+  }
+
+  const response = await axios.post(url, data, { timeout: 5000 })
+  if (response.data?.code !== 0) {
+    throw new Error(response.data?.msg || '释放数字人会话失败')
+  }
+  return response
 }
